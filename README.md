@@ -207,19 +207,17 @@ Réponse attendue :
 
 ## Interface Web — Installation Docker / Portainer
 
-### Option A — Portainer (Stack, copier-coller)
-
-Portainer → Stacks → Add stack → coller :
+### Option A — Portainer (depuis GitHub, recommandé)
 
 ```yaml
 services:
   volet:
-    image: ghcr.io/balou866/domo-store:latest
+    build: ./app
     container_name: volet-roulant
     ports:
-      - "8080:8080"
+      - "9090:9090"
     environment:
-      - ESP32_URL=http://192.168.1.XXX   # ← IP notée à l'étape 8
+      - ESP32_URL=http://192.168.1.XXX   # ← Remplacer par l'IP de l'ESP32
       - TZ=Europe/Paris
     volumes:
       - volet_data:/app/data
@@ -229,7 +227,7 @@ volumes:
   volet_data:
 ```
 
-### Option B — depuis les sources
+### Option B — depuis les sources (CLI)
 
 ```bash
 git clone https://github.com/Balou866/Domo-store.git
@@ -241,7 +239,7 @@ docker compose up -d --build
 ### Accès
 
 ```
-http://<IP_DU_SERVEUR>:8080
+http://<IP_DU_SERVEUR>:9090
 ```
 
 ---

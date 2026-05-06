@@ -3,14 +3,13 @@ services:
     build: ./app
     container_name: volet-roulant
     ports:
-      - "8080:8080"
+      - "9090:9090"
     environment:
-      - ESP32_URL=http://192.168.1.100   # Remplacez par l'IP locale de votre ESP32
+      - ESP32_URL=http://192.168.1.XXX   # ← Remplacer par l'IP de l'ESP32
       - TZ=Europe/Paris
     volumes:
       - volet_data:/app/data
     restart: unless-stopped
-    network_mode: bridge
 
 volumes:
   volet_data:
