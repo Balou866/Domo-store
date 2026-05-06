@@ -1,6 +1,7 @@
 services:
   volet:
-    build: ./app
+    build:
+      context: https://github.com/Balou866/Domo-store.git#main:app
     container_name: volet-roulant
     ports:
       - "9090:9090"
