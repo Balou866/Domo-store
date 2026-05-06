@@ -43,6 +43,13 @@
   .subtitle {
     font-size: 13px;
     color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  #clock {
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
     margin-bottom: 28px;
   }
 
@@ -230,12 +237,35 @@
   .icon-btn.del:hover { border-color: var(--red); color: var(--red); }
 
   .empty { text-align: center; font-size: 13px; color: var(--muted); padding: 20px 0; }
+
+  input[type=file] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  input[type=file]::file-selector-button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-right: 10px;
+  }
+  #ota-status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 16px; }
 </style>
 </head>
 <body>
 
 <h1>Volet Roulant</h1>
 <p class="subtitle">Contrôle & programmation</p>
+<p id="clock"></p>
 
 <div id="toast"></div>
 
@@ -280,6 +310,17 @@
   </div>
   <button class="btn-add" onclick="saveConfig()">Enregistrer la configuration</button>
   <div id="config-current" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+</div>
+
+<!-- OTA Firmware -->
+<div class="card">
+  <div class="card-title">Mise à jour firmware (OTA)</div>
+  <div class="field full">
+    <label>Fichier .bin — Arduino IDE → Sketch → Export Compiled Binary</label>
+    <input type="file" id="ota-file" accept=".bin">
+  </div>
+  <button class="btn-add" id="ota-btn" onclick="uploadOTA()" style="margin-top:10px">Flasher le firmware</button>
+  <div id="ota-status"></div>
 </div>
 
 <!-- Programmation -->
@@ -486,6 +527,37 @@ async function saveConfig() {
     loadConfig();
   } catch(e) { toast('Erreur : ESP32 inaccessible', 'err'); }
 }
+
+async function uploadOTA() {
+  const file = document.getElementById('ota-file').files[0];
+  if (!file) { toast('Sélectionner un fichier .bin', 'err'); return; }
+  const btn = document.getElementById('ota-btn');
+  const status = document.getElementById('ota-status');
+  btn.disabled = true;
+  status.textContent = 'Upload en cours...';
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const r = await fetch('/api/ota', { method: 'POST', body: form });
+    if (!r.ok) throw new Error(await r.text());
+    status.textContent = 'Firmware flashé. ESP32 redémarre...';
+    toast('OTA réussi — redémarrage ESP32');
+  } catch(e) {
+    status.textContent = 'Erreur : ' + e.message;
+    toast('OTA échoué', 'err');
+    btn.disabled = false;
+  }
+}
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleString('fr-FR', {
+    timeZone: 'Europe/Paris',
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+}
+updateClock();
+setInterval(updateClock, 1000);
 
 refreshStatus();
 loadSchedules();

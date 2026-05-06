@@ -10,7 +10,7 @@ import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -53,6 +53,7 @@ def rebuild_jobs(schedules: list):
                 hour=s["hour"],
                 minute=s["minute"],
                 day_of_week=s.get("days", "*"),
+                timezone="Europe/Paris",
             )
         scheduler.add_job(
             send_command,
@@ -149,6 +150,21 @@ async def esp32_set_config(payload: dict):
             return r.json()
     except Exception as e:
         raise HTTPException(503, f"ESP32 inaccessible : {e}")
+
+
+@app.post("/api/ota")
+async def ota_update(file: UploadFile = File(...)):
+    content = await file.read()
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{ESP32_URL}/api/ota",
+                files={"firmware": (file.filename, content, "application/octet-stream")},
+            )
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        raise HTTPException(503, f"OTA échoué : {e}")
 
 
 @app.patch("/api/schedules/{sid}/toggle")

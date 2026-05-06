@@ -263,6 +263,23 @@ http://<IP_DU_SERVEUR>:9090
 
 ---
 
+## Mise à jour firmware OTA (sans câble USB)
+
+Deux méthodes disponibles après le premier flash USB :
+
+### Méthode A — Via l'interface web
+
+1. Arduino IDE → **Sketch → Export Compiled Binary** → récupérer le `.bin`
+2. Interface web → carte **Mise à jour firmware** → sélectionner le `.bin` → **Flasher**
+3. L'ESP32 se met à jour et redémarre automatiquement
+
+### Méthode B — ArduinoOTA (Arduino IDE via WiFi)
+
+1. **Outils → Port** → sélectionner `volet-roulant.local` (apparaît en réseau)
+2. Cliquer **→ Upload** comme d'habitude — flash via WiFi
+
+---
+
 ## API ESP32 (accès direct)
 
 | Méthode | Endpoint | Description |
@@ -273,6 +290,7 @@ http://<IP_DU_SERVEUR>:9090
 | GET | `/api/stop` | Arrêt immédiat |
 | GET | `/api/config` | Lire la configuration actuelle |
 | POST | `/api/config` | Modifier travel_time_ms, ssid2, password2 |
+| POST | `/api/ota` | Flash firmware OTA (multipart, champ `firmware`) |
 
 Exemple modification travel time :
 ```bash

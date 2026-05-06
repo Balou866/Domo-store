@@ -1,5 +1,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ArduinoOTA.h>
+#include <Update.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <Adafruit_INA219.h>
@@ -144,6 +146,33 @@ void handleGetConfig() {
   server.send(200, "application/json", out);
 }
 
+void handleOTAUpload() {
+  addCORSHeaders();
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    motorStop();
+    Serial.printf("OTA HTTP: %s\n", upload.filename.c_str());
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
+      Update.printError(Serial);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (Update.end(true)) Serial.printf("OTA OK: %u bytes\n", upload.totalSize);
+    else Update.printError(Serial);
+  }
+}
+
+void handleOTADone() {
+  addCORSHeaders();
+  if (Update.hasError()) {
+    server.send(500, "application/json", "{\"ok\":false,\"error\":\"OTA echoue\"}");
+  } else {
+    server.send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
+    delay(500);
+    ESP.restart();
+  }
+}
+
 void handleSetConfig() {
   addCORSHeaders();
   StaticJsonDocument<256> doc;
@@ -189,6 +218,13 @@ void setup() {
 
   connectWiFi();
 
+  ArduinoOTA.setHostname("volet-roulant");
+  ArduinoOTA.onStart([]() { motorStop(); Serial.println("ArduinoOTA: debut"); });
+  ArduinoOTA.onEnd([]()   { Serial.println("ArduinoOTA: termine"); });
+  ArduinoOTA.onError([](ota_error_t e) { Serial.printf("ArduinoOTA erreur [%u]\n", e); });
+  ArduinoOTA.begin();
+  Serial.println("ArduinoOTA pret (volet-roulant.local)");
+
   server.on("/api/status",  HTTP_GET,     handleStatus);
   server.on("/api/status",  HTTP_OPTIONS, handleOptions);
   server.on("/api/config",  HTTP_GET,     handleGetConfig);
@@ -200,12 +236,15 @@ void setup() {
   server.on("/api/close",   HTTP_OPTIONS, handleOptions);
   server.on("/api/stop",    HTTP_GET,     handleCommand);
   server.on("/api/stop",    HTTP_OPTIONS, handleOptions);
+  server.on("/api/ota",     HTTP_POST,    handleOTADone, handleOTAUpload);
+  server.on("/api/ota",     HTTP_OPTIONS, handleOptions);
 
   server.begin();
   Serial.println("Serveur HTTP démarré");
 }
 
 void loop() {
+  ArduinoOTA.handle();
   server.handleClient();
 
   if (motorState != STOPPED && millis() >= stopAt) {
