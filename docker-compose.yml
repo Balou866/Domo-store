@@ -5,8 +5,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Remplacez par l'IP locale de votre ESP32
-      - ESP32_URL=http://192.168.1.100
+      - ESP32_URL=http://192.168.1.100   # Remplacez par l'IP locale de votre ESP32
+      - TZ=Europe/Paris
     volumes:
       - volet_data:/app/data
     restart: unless-stopped

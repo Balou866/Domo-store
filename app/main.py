@@ -2,13 +2,15 @@ import json
 import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -40,10 +42,21 @@ def rebuild_jobs(schedules: list):
     for s in schedules:
         if not s.get("enabled", True):
             continue
-        days = s.get("days", "*")
+        if s.get("one_time_date"):
+            y, m, d = (int(x) for x in s["one_time_date"].split("-"))
+            trigger = DateTrigger(
+                run_date=datetime(y, m, d, s["hour"], s["minute"]),
+                timezone="Europe/Paris",
+            )
+        else:
+            trigger = CronTrigger(
+                hour=s["hour"],
+                minute=s["minute"],
+                day_of_week=s.get("days", "*"),
+            )
         scheduler.add_job(
             send_command,
-            CronTrigger(hour=s["hour"], minute=s["minute"], day_of_week=days),
+            trigger,
             args=[s["action"]],
             id=s["id"],
             replace_existing=True,
@@ -63,10 +76,11 @@ app = FastAPI(lifespan=lifespan)
 
 class Schedule(BaseModel):
     id: str | None = None
-    action: str        # "open" | "close"
+    action: Literal["open", "close"]
     hour: int
     minute: int
-    days: str = "*"   # format cron : "mon,fri" ou "*" pour tous les jours
+    days: str = "*"
+    one_time_date: date | None = None
     enabled: bool = True
     label: str = ""
 
@@ -102,7 +116,7 @@ async def add_schedule(s: Schedule):
     if s.id is None:
         s.id = str(uuid.uuid4())[:8]
     schedules = [x for x in load_schedules() if x["id"] != s.id]
-    schedules.append(s.model_dump())
+    schedules.append(s.model_dump(mode="json"))
     save_schedules(schedules)
     rebuild_jobs(schedules)
     return {"ok": True, "id": s.id}

@@ -65,7 +65,6 @@
     margin-bottom: 16px;
   }
 
-  /* Status indicator */
   .status-row {
     display: flex;
     align-items: center;
@@ -89,8 +88,8 @@
 
   #status-text { font-size: 15px; font-weight: 500; }
   #status-detail { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  #status-current { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-  /* Control buttons */
   .btn-row {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -126,7 +125,6 @@
 
   .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-  /* Feedback toast */
   #toast {
     position: fixed; top: 20px; right: 20px;
     background: var(--surface2);
@@ -143,7 +141,6 @@
   #toast.ok   { border-color: rgba(67,217,173,0.4); color: var(--green); }
   #toast.err  { border-color: rgba(244,112,103,0.4); color: var(--red); }
 
-  /* Schedules */
   .sched-form {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -215,6 +212,7 @@
   }
   .badge.open  { background: rgba(67,217,173,0.15); color: var(--green); }
   .badge.close { background: rgba(79,156,249,0.15);  color: var(--blue); }
+  .badge.once  { background: rgba(255,166,87,0.15); color: var(--amber); }
 
   .sched-actions { display: flex; gap: 6px; }
   .icon-btn {
@@ -249,6 +247,7 @@
     <span id="status-text">Connexion...</span>
   </div>
   <div id="status-detail"></div>
+  <div id="status-current"></div>
   <div class="btn-row" style="margin-top:18px;">
     <button class="btn open"  onclick="cmd('open')">
       <span class="btn-icon">&#8593;</span>Ouvrir
@@ -278,6 +277,13 @@
       </select>
     </div>
     <div class="field full">
+      <label>Type</label>
+      <select id="s-type" onchange="toggleSchedType()">
+        <option value="recurring">Récurrent</option>
+        <option value="once">Une seule fois</option>
+      </select>
+    </div>
+    <div class="field full" id="s-days-row">
       <label>Jours</label>
       <select id="s-days">
         <option value="*">Tous les jours</option>
@@ -291,6 +297,10 @@
         <option value="sat">Samedi</option>
         <option value="sun">Dimanche</option>
       </select>
+    </div>
+    <div class="field full" id="s-date-row" style="display:none">
+      <label>Date</label>
+      <input type="date" id="s-date">
     </div>
     <div class="field full">
       <label>Label (optionnel)</label>
@@ -308,6 +318,17 @@ const DAYS_LABELS = {
   'sat,sun': 'Week-end',
   mon:'Lun', tue:'Mar', wed:'Mer', thu:'Jeu', fri:'Ven', sat:'Sam', sun:'Dim'
 };
+
+function toggleSchedType() {
+  const once = document.getElementById('s-type').value === 'once';
+  document.getElementById('s-days-row').style.display = once ? 'none' : '';
+  document.getElementById('s-date-row').style.display = once ? '' : 'none';
+  if (once && !document.getElementById('s-date').value) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('s-date').value = tomorrow.toISOString().slice(0, 10);
+  }
+}
 
 async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -341,14 +362,19 @@ async function refreshStatus() {
     const dot = document.getElementById('status-dot');
     const txt = document.getElementById('status-text');
     const det = document.getElementById('status-detail');
+    const cur = document.getElementById('status-current');
     if (d.state === 'offline') {
       dot.className = 'dot';
       txt.textContent = 'ESP32 hors ligne';
-      det.textContent = 'Vérifiez le WiFi et l\'IP dans docker-compose.yml';
+      det.textContent = "Vérifiez le WiFi et l'IP dans docker-compose.yml";
+      cur.textContent = '';
     } else {
       dot.className = 'dot ' + (d.state === 'stopped' ? 'online' : d.state);
       txt.textContent = { stopped:'En attente', opening:'Ouverture en cours', closing:'Fermeture en cours' }[d.state] || d.state;
       det.textContent = d.ip ? `ESP32 · ${d.ip} · WiFi ${d.rssi} dBm` : '';
+      cur.textContent = d.current_mA !== undefined
+        ? `Courant : ${d.current_mA.toFixed(0)} mA · ${d.voltage_V.toFixed(1)} V`
+        : '';
     }
   } catch {
     document.getElementById('status-dot').className = 'dot';
@@ -362,12 +388,18 @@ async function loadSchedules() {
   if (!list.length) { el.innerHTML = '<div class="empty">Aucun programme</div>'; return; }
   el.innerHTML = list.map(s => {
     const time = `${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}`;
-    const days = DAYS_LABELS[s.days] || s.days;
-    const label = s.label || '';
+    let metaText;
+    if (s.one_time_date) {
+      const [y, m, d] = s.one_time_date.split('-');
+      metaText = `<span class="badge once">Une fois</span> le ${d}/${m}/${y}`;
+    } else {
+      metaText = DAYS_LABELS[s.days] || s.days;
+    }
+    const label = s.label ? ` · ${s.label}` : '';
     return `<div class="sched-item ${s.enabled ? '' : 'disabled'}" data-id="${s.id}">
       <div class="sched-info">
         <div class="sched-time">${time} <span class="badge ${s.action}">${s.action === 'open' ? 'Ouvrir' : 'Fermer'}</span></div>
-        <div class="sched-meta">${days}${label ? ' · ' + label : ''}</div>
+        <div class="sched-meta">${metaText}${label}</div>
       </div>
       <div class="sched-actions">
         <button class="icon-btn" onclick="toggleSched('${s.id}')" title="${s.enabled ? 'Désactiver' : 'Activer'}">${s.enabled ? '⏸' : '▶'}</button>
@@ -379,10 +411,13 @@ async function loadSchedules() {
 
 async function addSchedule() {
   const [h, m] = document.getElementById('s-time').value.split(':');
+  const once = document.getElementById('s-type').value === 'once';
   const body = {
     action: document.getElementById('s-action').value,
-    hour: parseInt(h), minute: parseInt(m),
-    days: document.getElementById('s-days').value,
+    hour: parseInt(h),
+    minute: parseInt(m),
+    days: once ? '*' : document.getElementById('s-days').value,
+    one_time_date: once ? document.getElementById('s-date').value : null,
     label: document.getElementById('s-label').value,
     enabled: true
   };
@@ -405,7 +440,6 @@ async function deleteSched(id) {
   loadSchedules();
 }
 
-// Init
 refreshStatus();
 loadSchedules();
 setInterval(refreshStatus, 10000);
