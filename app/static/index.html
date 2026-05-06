@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Volet Roulant</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --text: #e8eaf6;
+    --muted: #8892b0;
+    --blue: #4f9cf9;
+    --blue-dim: rgba(79,156,249,0.15);
+    --green: #43d9ad;
+    --red: #f47067;
+    --amber: #ffa657;
+    --radius: 12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 28px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  /* Status indicator */
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .dot.online   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.opening  { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: pulse 1s infinite; }
+  .dot.closing  { background: var(--blue);  box-shadow: 0 0 6px var(--blue);  animation: pulse 1s infinite; }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  #status-text { font-size: 15px; font-weight: 500; }
+  #status-detail { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* Control buttons */
+  .btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .btn {
+    padding: 14px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .btn:hover { border-color: rgba(255,255,255,0.2); background: #2a2f47; }
+  .btn:active { transform: scale(0.97); }
+  .btn-icon { font-size: 22px; }
+
+  .btn.open  { border-color: rgba(67,217,173,0.3); }
+  .btn.open:hover  { border-color: var(--green); background: rgba(67,217,173,0.1); }
+  .btn.close { border-color: rgba(79,156,249,0.3); }
+  .btn.close:hover { border-color: var(--blue);  background: rgba(79,156,249,0.1); }
+  .btn.stop  { border-color: rgba(244,112,103,0.3); }
+  .btn.stop:hover  { border-color: var(--red);   background: rgba(244,112,103,0.1); }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* Feedback toast */
+  #toast {
+    position: fixed; top: 20px; right: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    transform: translateY(-80px);
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 100;
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.ok   { border-color: rgba(67,217,173,0.4); color: var(--green); }
+  #toast.err  { border-color: rgba(244,112,103,0.4); color: var(--red); }
+
+  /* Schedules */
+  .sched-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+
+  .field input, .field select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--blue); }
+
+  .field.full { grid-column: 1 / -1; }
+
+  .btn-add {
+    width: 100%;
+    padding: 10px;
+    background: var(--blue-dim);
+    border: 1px solid rgba(79,156,249,0.3);
+    border-radius: 8px;
+    color: var(--blue);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-top: 4px;
+  }
+  .btn-add:hover { background: rgba(79,156,249,0.25); }
+
+  .sched-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+
+  .sched-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    gap: 10px;
+  }
+  .sched-item.disabled { opacity: 0.45; }
+
+  .sched-info { flex: 1; }
+  .sched-time { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sched-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge.open  { background: rgba(67,217,173,0.15); color: var(--green); }
+  .badge.close { background: rgba(79,156,249,0.15);  color: var(--blue); }
+
+  .sched-actions { display: flex; gap: 6px; }
+  .icon-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    width: 28px; height: 28px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .icon-btn:hover { border-color: rgba(255,255,255,0.2); color: var(--text); }
+  .icon-btn.del:hover { border-color: var(--red); color: var(--red); }
+
+  .empty { text-align: center; font-size: 13px; color: var(--muted); padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<h1>Volet Roulant</h1>
+<p class="subtitle">Contrôle & programmation</p>
+
+<div id="toast"></div>
+
+<!-- Contrôle en direct -->
+<div class="card">
+  <div class="card-title">État & commandes</div>
+  <div class="status-row">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">Connexion...</span>
+  </div>
+  <div id="status-detail"></div>
+  <div class="btn-row" style="margin-top:18px;">
+    <button class="btn open"  onclick="cmd('open')">
+      <span class="btn-icon">&#8593;</span>Ouvrir
+    </button>
+    <button class="btn stop"  onclick="cmd('stop')">
+      <span class="btn-icon">&#9632;</span>Stop
+    </button>
+    <button class="btn close" onclick="cmd('close')">
+      <span class="btn-icon">&#8595;</span>Fermer
+    </button>
+  </div>
+</div>
+
+<!-- Programmation -->
+<div class="card">
+  <div class="card-title">Programmation</div>
+  <div class="sched-form">
+    <div class="field">
+      <label>Heure</label>
+      <input type="time" id="s-time" value="08:00">
+    </div>
+    <div class="field">
+      <label>Action</label>
+      <select id="s-action">
+        <option value="open">Ouvrir</option>
+        <option value="close">Fermer</option>
+      </select>
+    </div>
+    <div class="field full">
+      <label>Jours</label>
+      <select id="s-days">
+        <option value="*">Tous les jours</option>
+        <option value="mon,tue,wed,thu,fri">Semaine (lun-ven)</option>
+        <option value="sat,sun">Week-end</option>
+        <option value="mon">Lundi</option>
+        <option value="tue">Mardi</option>
+        <option value="wed">Mercredi</option>
+        <option value="thu">Jeudi</option>
+        <option value="fri">Vendredi</option>
+        <option value="sat">Samedi</option>
+        <option value="sun">Dimanche</option>
+      </select>
+    </div>
+    <div class="field full">
+      <label>Label (optionnel)</label>
+      <input type="text" id="s-label" placeholder="ex: Réveil matin">
+    </div>
+  </div>
+  <button class="btn-add" onclick="addSchedule()">+ Ajouter ce programme</button>
+  <div class="sched-list" id="sched-list"><div class="empty">Aucun programme</div></div>
+</div>
+
+<script>
+const DAYS_LABELS = {
+  '*': 'Tous les jours',
+  'mon,tue,wed,thu,fri': 'Lun–Ven',
+  'sat,sun': 'Week-end',
+  mon:'Lun', tue:'Mar', wed:'Mer', thu:'Jeu', fri:'Ven', sat:'Sam', sun:'Dim'
+};
+
+async function api(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = '', 2500);
+}
+
+async function cmd(action) {
+  try {
+    await api('/api/control/' + action);
+    toast({ open:'Ouverture...', close:'Fermeture...', stop:'Arrêt' }[action]);
+    setTimeout(refreshStatus, 800);
+  } catch(e) {
+    toast('Erreur : ESP32 inaccessible', 'err');
+  }
+}
+
+async function refreshStatus() {
+  try {
+    const d = await api('/api/status');
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    const det = document.getElementById('status-detail');
+    if (d.state === 'offline') {
+      dot.className = 'dot';
+      txt.textContent = 'ESP32 hors ligne';
+      det.textContent = 'Vérifiez le WiFi et l\'IP dans docker-compose.yml';
+    } else {
+      dot.className = 'dot ' + (d.state === 'stopped' ? 'online' : d.state);
+      txt.textContent = { stopped:'En attente', opening:'Ouverture en cours', closing:'Fermeture en cours' }[d.state] || d.state;
+      det.textContent = d.ip ? `ESP32 · ${d.ip} · WiFi ${d.rssi} dBm` : '';
+    }
+  } catch {
+    document.getElementById('status-dot').className = 'dot';
+    document.getElementById('status-text').textContent = 'Hors ligne';
+  }
+}
+
+async function loadSchedules() {
+  const list = await api('/api/schedules');
+  const el = document.getElementById('sched-list');
+  if (!list.length) { el.innerHTML = '<div class="empty">Aucun programme</div>'; return; }
+  el.innerHTML = list.map(s => {
+    const time = `${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}`;
+    const days = DAYS_LABELS[s.days] || s.days;
+    const label = s.label || '';
+    return `<div class="sched-item ${s.enabled ? '' : 'disabled'}" data-id="${s.id}">
+      <div class="sched-info">
+        <div class="sched-time">${time} <span class="badge ${s.action}">${s.action === 'open' ? 'Ouvrir' : 'Fermer'}</span></div>
+        <div class="sched-meta">${days}${label ? ' · ' + label : ''}</div>
+      </div>
+      <div class="sched-actions">
+        <button class="icon-btn" onclick="toggleSched('${s.id}')" title="${s.enabled ? 'Désactiver' : 'Activer'}">${s.enabled ? '⏸' : '▶'}</button>
+        <button class="icon-btn del" onclick="deleteSched('${s.id}')" title="Supprimer">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addSchedule() {
+  const [h, m] = document.getElementById('s-time').value.split(':');
+  const body = {
+    action: document.getElementById('s-action').value,
+    hour: parseInt(h), minute: parseInt(m),
+    days: document.getElementById('s-days').value,
+    label: document.getElementById('s-label').value,
+    enabled: true
+  };
+  try {
+    await api('/api/schedules', 'POST', body);
+    toast('Programme ajouté');
+    document.getElementById('s-label').value = '';
+    loadSchedules();
+  } catch(e) { toast('Erreur', 'err'); }
+}
+
+async function toggleSched(id) {
+  await api('/api/schedules/' + id + '/toggle', 'PATCH');
+  loadSchedules();
+}
+
+async function deleteSched(id) {
+  await api('/api/schedules/' + id, 'DELETE');
+  toast('Programme supprimé');
+  loadSchedules();
+}
+
+// Init
+refreshStatus();
+loadSchedules();
+setInterval(refreshStatus, 10000);
+</script>
+</body>
+</html>
