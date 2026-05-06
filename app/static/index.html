@@ -261,6 +261,27 @@
   </div>
 </div>
 
+<!-- Configuration ESP32 -->
+<div class="card">
+  <div class="card-title">Configuration ESP32</div>
+  <div class="sched-form">
+    <div class="field full">
+      <label>Durée ouverture/fermeture complète (ms)</label>
+      <input type="number" id="c-travel" placeholder="ex: 15000" min="1000" max="120000">
+    </div>
+    <div class="field full">
+      <label>WiFi secondaire — SSID</label>
+      <input type="text" id="c-ssid2" placeholder="Nom du réseau de secours">
+    </div>
+    <div class="field full">
+      <label>WiFi secondaire — Mot de passe</label>
+      <input type="password" id="c-pass2" placeholder="Mot de passe">
+    </div>
+  </div>
+  <button class="btn-add" onclick="saveConfig()">Enregistrer la configuration</button>
+  <div id="config-current" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+</div>
+
 <!-- Programmation -->
 <div class="card">
   <div class="card-title">Programmation</div>
@@ -440,8 +461,35 @@ async function deleteSched(id) {
   loadSchedules();
 }
 
+async function loadConfig() {
+  try {
+    const d = await api('/api/esp32/config');
+    if (d.travel_time_ms) document.getElementById('c-travel').value = d.travel_time_ms;
+    const info = document.getElementById('config-current');
+    info.textContent = `WiFi principal : ${d.ssid1 || '—'}` + (d.ssid2 ? ` · Secours : ${d.ssid2}` : '');
+  } catch { }
+}
+
+async function saveConfig() {
+  const body = {};
+  const travel = parseInt(document.getElementById('c-travel').value);
+  const ssid2  = document.getElementById('c-ssid2').value.trim();
+  const pass2  = document.getElementById('c-pass2').value;
+  if (travel > 0)      body.travel_time_ms = travel;
+  if (ssid2.length)    body.ssid2 = ssid2;
+  if (pass2.length)    body.password2 = pass2;
+  if (!Object.keys(body).length) { toast('Rien à enregistrer', 'err'); return; }
+  try {
+    await api('/api/esp32/config', 'POST', body);
+    toast('Configuration envoyée à l\'ESP32');
+    document.getElementById('c-pass2').value = '';
+    loadConfig();
+  } catch(e) { toast('Erreur : ESP32 inaccessible', 'err'); }
+}
+
 refreshStatus();
 loadSchedules();
+loadConfig();
 setInterval(refreshStatus, 10000);
 </script>
 </body>

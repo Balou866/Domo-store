@@ -130,6 +130,27 @@ async def delete_schedule(sid: str):
     return {"ok": True}
 
 
+@app.get("/api/esp32/config")
+async def esp32_get_config():
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{ESP32_URL}/api/config")
+            return r.json()
+    except Exception:
+        return {"error": "ESP32 inaccessible"}
+
+
+@app.post("/api/esp32/config")
+async def esp32_set_config(payload: dict):
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.post(f"{ESP32_URL}/api/config", json=payload)
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        raise HTTPException(503, f"ESP32 inaccessible : {e}")
+
+
 @app.patch("/api/schedules/{sid}/toggle")
 async def toggle_schedule(sid: str):
     schedules = load_schedules()
