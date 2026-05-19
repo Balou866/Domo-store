@@ -203,7 +203,7 @@ async def esp32_set_config(payload: dict):
 async def ota_update(file: UploadFile = File(...)):
     content = await file.read()
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             r = await client.post(
                 f"{ESP32_URL}/api/ota",
                 files={"firmware": (file.filename, content, "application/octet-stream")},

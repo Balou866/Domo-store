@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.1.1"
+#define FIRMWARE_VERSION "1.1.4"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -154,14 +154,20 @@ void handleOTAUpload() {
   HTTPUpload& upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
     motorStop();
-    Serial.printf("OTA HTTP: %s\n", upload.filename.c_str());
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+    Serial.printf("OTA START: %s size=%u\n", upload.filename.c_str(), upload.totalSize);
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { Serial.print("OTA begin FAIL: "); Update.printError(Serial); }
+    else Serial.println("OTA begin OK");
   } else if (upload.status == UPLOAD_FILE_WRITE) {
+    Serial.printf("OTA WRITE: %u bytes\n", upload.currentSize);
     if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-      Update.printError(Serial);
+      { Serial.print("OTA write FAIL: "); Update.printError(Serial); }
   } else if (upload.status == UPLOAD_FILE_END) {
-    if (Update.end(true)) Serial.printf("OTA OK: %u bytes\n", upload.totalSize);
-    else Update.printError(Serial);
+    Serial.printf("OTA END: total=%u\n", upload.totalSize);
+    if (Update.end(true)) Serial.println("OTA end OK");
+    else { Serial.print("OTA end FAIL: "); Update.printError(Serial); }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    Serial.println("OTA ABORTED");
+    Update.abort();
   }
 }
 
