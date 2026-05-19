@@ -312,6 +312,23 @@
   <div id="config-current" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
 </div>
 
+<!-- Retry config -->
+<div class="card">
+  <div class="card-title">Retry (tâches planifiées)</div>
+  <div class="field-row">
+    <div class="field">
+      <label>Tentatives</label>
+      <input type="number" id="retry-retries" min="1" max="10" value="3">
+    </div>
+    <div class="field">
+      <label>Délai entre tentatives (s)</label>
+      <input type="number" id="retry-delay" min="1" max="60" value="5">
+    </div>
+  </div>
+  <button class="btn-add" onclick="saveRetryConfig()" style="margin-top:10px">Enregistrer</button>
+  <div id="retry-status" style="margin-top:8px;font-size:12px;color:var(--muted);min-height:16px"></div>
+</div>
+
 <!-- OTA Firmware -->
 <div class="card">
   <div class="card-title">Mise à jour firmware (OTA)</div>
@@ -433,7 +450,8 @@ async function refreshStatus() {
     } else {
       dot.className = 'dot ' + (d.state === 'stopped' ? 'online' : d.state);
       txt.textContent = { stopped:'En attente', opening:'Ouverture en cours', closing:'Fermeture en cours' }[d.state] || d.state;
-      det.textContent = d.ip ? `ESP32 · ${d.ip} · WiFi ${d.rssi} dBm` : '';
+      const fw = d.firmware ? ` · fw ${d.firmware}` : '';
+      det.textContent = d.ip ? `ESP32 · ${d.ip} · WiFi ${d.rssi} dBm${fw}` : '';
       cur.textContent = d.current_mA !== undefined
         ? `Courant : ${d.current_mA.toFixed(0)} mA · ${d.voltage_V.toFixed(1)} V`
         : '';
@@ -528,6 +546,27 @@ async function saveConfig() {
   } catch(e) { toast('Erreur : ESP32 inaccessible', 'err'); }
 }
 
+async function loadRetryConfig() {
+  try {
+    const d = await api('/api/retry-config');
+    document.getElementById('retry-retries').value = d.retries;
+    document.getElementById('retry-delay').value = d.delay;
+  } catch {}
+}
+
+async function saveRetryConfig() {
+  const retries = parseInt(document.getElementById('retry-retries').value);
+  const delay = parseFloat(document.getElementById('retry-delay').value);
+  const s = document.getElementById('retry-status');
+  try {
+    await api('/api/retry-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ retries, delay }) });
+    s.textContent = 'Enregistré.';
+    setTimeout(() => s.textContent = '', 3000);
+  } catch {
+    s.textContent = 'Erreur lors de la sauvegarde.';
+  }
+}
+
 async function uploadOTA() {
   const file = document.getElementById('ota-file').files[0];
   if (!file) { toast('Sélectionner un fichier .bin', 'err'); return; }
@@ -562,6 +601,7 @@ setInterval(updateClock, 1000);
 refreshStatus();
 loadSchedules();
 loadConfig();
+loadRetryConfig();
 setInterval(refreshStatus, 10000);
 </script>
 </body>

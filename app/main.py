@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -16,25 +18,57 @@ from pydantic import BaseModel
 
 ESP32_URL = os.getenv("ESP32_URL", "http://192.168.1.100")
 DATA_FILE = Path("/app/data/schedules.json")
+RETRY_FILE = Path("/app/data/retry_config.json")
 scheduler = AsyncIOScheduler(timezone="Europe/Paris")
 
 
-def load_schedules() -> list:
+def load_json(path: Path, default):
     try:
-        return json.loads(DATA_FILE.read_text()) if DATA_FILE.exists() else []
+        return json.loads(path.read_text()) if path.exists() else default
     except Exception:
-        return []
+        return default
+
+
+def save_json(path: Path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+
+
+class RetryConfig(BaseModel):
+    retries: int = 3
+    delay: float = 5.0
+
+
+retry_config = RetryConfig(**load_json(RETRY_FILE, {}))
+
+
+def load_schedules() -> list:
+    return load_json(DATA_FILE, [])
 
 
 def save_schedules(schedules: list):
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    DATA_FILE.write_text(json.dumps(schedules, indent=2))
+    save_json(DATA_FILE, schedules)
 
 
 async def send_command(action: str):
     async with httpx.AsyncClient(timeout=5.0) as client:
         r = await client.get(f"{ESP32_URL}/api/{action}")
         r.raise_for_status()
+
+
+async def send_command_with_retry(action: str):
+    retries = retry_config.retries
+    delay = retry_config.delay
+    for attempt in range(1, retries + 1):
+        try:
+            await send_command(action)
+            logging.info("Job %s OK (tentative %d/%d)", action, attempt, retries)
+            return
+        except Exception as e:
+            logging.warning("Job %s échoué (tentative %d/%d) : %s", action, attempt, retries, e)
+            if attempt < retries:
+                await asyncio.sleep(delay)
+    logging.error("Job %s abandonné après %d tentatives", action, retries)
 
 
 def rebuild_jobs(schedules: list):
@@ -56,7 +90,7 @@ def rebuild_jobs(schedules: list):
                 timezone="Europe/Paris",
             )
         scheduler.add_job(
-            send_command,
+            send_command_with_retry,
             trigger,
             args=[s["action"]],
             id=s["id"],
@@ -95,6 +129,19 @@ async def control(action: str):
         return {"ok": True, "action": action}
     except Exception as e:
         raise HTTPException(503, f"ESP32 inaccessible : {e}")
+
+
+@app.get("/api/retry-config")
+async def get_retry_config():
+    return retry_config
+
+
+@app.post("/api/retry-config")
+async def set_retry_config(payload: RetryConfig):
+    retry_config.retries = payload.retries
+    retry_config.delay = payload.delay
+    save_json(RETRY_FILE, retry_config.model_dump())
+    return retry_config
 
 
 @app.get("/api/status")
@@ -163,8 +210,11 @@ async def ota_update(file: UploadFile = File(...)):
             )
             r.raise_for_status()
             return r.json()
+    except (httpx.RemoteProtocolError, httpx.ReadError):
+        return {"ok": True, "reboot": True}
     except Exception as e:
-        raise HTTPException(503, f"OTA échoué : {e}")
+        logging.error("OTA exception type=%s msg=%r", type(e).__name__, str(e))
+        raise HTTPException(503, f"OTA échoué : {type(e).__name__}: {e}")
 
 
 @app.patch("/api/schedules/{sid}/toggle")

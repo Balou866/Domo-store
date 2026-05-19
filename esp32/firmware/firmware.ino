@@ -8,8 +8,10 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-const char* WIFI_SSID     = "ENTER SSID";
-const char* WIFI_PASSWORD = "ENTER SSID PASSWORD";
+#define FIRMWARE_VERSION "1.1.1"
+
+const char* WIFI_SSID     = "";
+const char* WIFI_PASSWORD = "";
 
 const int TRAVEL_TIME_DEFAULT = 60000;
 
@@ -19,7 +21,7 @@ const int TRAVEL_TIME_DEFAULT = 60000;
 #define PIN_PWMA  14
 #define PIN_STBY  25
 
-#define PWM_DUTY  200  // 0-255 (~78% vitesse)
+#define PWM_DUTY  255
 // =============================
 
 WebServer server(80);
@@ -121,6 +123,7 @@ void handleStatus() {
   addCORSHeaders();
   StaticJsonDocument<256> doc;
   const char* states[] = {"stopped", "opening", "closing"};
+  doc["firmware"]      = FIRMWARE_VERSION;
   doc["state"]         = states[motorState];
   doc["ip"]            = WiFi.localIP().toString();
   doc["rssi"]          = WiFi.RSSI();

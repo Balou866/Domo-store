@@ -1,0 +1,16 @@
+# Arduino build artifacts
+esp32/firmware/build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Docker / data persistée
+app/data/
+
+# OS
+.DS_Store
+Thumbs.db
