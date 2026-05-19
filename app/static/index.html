@@ -176,6 +176,9 @@
   .field input:focus, .field select:focus { border-color: var(--blue); }
 
   .field.full { grid-column: 1 / -1; }
+  .field-inline { display:flex; align-items:center; gap:10px; }
+  .field-inline input[type="checkbox"] { width:auto; margin:0; }
+  .field-inline input[type="number"] { flex:1; }
 
   .btn-add {
     width: 100%;
@@ -295,9 +298,20 @@
 <div class="card">
   <div class="card-title">Configuration ESP32</div>
   <div class="sched-form">
-    <div class="field full">
-      <label>Durée ouverture/fermeture complète (ms)</label>
+    <div class="field full" class="field-inline">
+      <input type="checkbox" id="c-stop-time" checked>
+      <label for="c-stop-time" style="margin:0">Arrêt par durée (ms)</label>
       <input type="number" id="c-travel" placeholder="ex: 15000" min="1000" max="120000">
+    </div>
+    <div class="field full" class="field-inline">
+      <input type="checkbox" id="c-stop-cur-open">
+      <label for="c-stop-cur-open" style="margin:0">Arrêt courant montée (mA)</label>
+      <input type="number" id="c-thr-open" placeholder="ex: 800" min="50" max="5000">
+    </div>
+    <div class="field full" class="field-inline">
+      <input type="checkbox" id="c-stop-cur-close">
+      <label for="c-stop-cur-close" style="margin:0">Arrêt courant descente (mA)</label>
+      <input type="number" id="c-thr-close" placeholder="ex: 800" min="50" max="5000">
     </div>
     <div class="field full">
       <label>WiFi secondaire — SSID</label>
@@ -526,7 +540,12 @@ async function deleteSched(id) {
 async function loadConfig() {
   try {
     const d = await api('/api/esp32/config');
-    if (d.travel_time_ms) document.getElementById('c-travel').value = d.travel_time_ms;
+    if (d.travel_time_ms !== undefined) document.getElementById('c-travel').value = d.travel_time_ms;
+    document.getElementById('c-stop-time').checked      = d.stop_on_time      ?? true;
+    document.getElementById('c-stop-cur-open').checked  = d.stop_on_cur_open  ?? false;
+    document.getElementById('c-stop-cur-close').checked = d.stop_on_cur_close ?? false;
+    if (d.threshold_open  !== undefined) document.getElementById('c-thr-open').value  = d.threshold_open;
+    if (d.threshold_close !== undefined) document.getElementById('c-thr-close').value = d.threshold_close;
     const info = document.getElementById('config-current');
     info.textContent = `WiFi principal : ${d.ssid1 || '—'}` + (d.ssid2 ? ` · Secours : ${d.ssid2}` : '');
   } catch { }
@@ -534,13 +553,19 @@ async function loadConfig() {
 
 async function saveConfig() {
   const body = {};
-  const travel = parseInt(document.getElementById('c-travel').value);
-  const ssid2  = document.getElementById('c-ssid2').value.trim();
-  const pass2  = document.getElementById('c-pass2').value;
-  if (travel > 0)      body.travel_time_ms = travel;
-  if (ssid2.length)    body.ssid2 = ssid2;
-  if (pass2.length)    body.password2 = pass2;
-  if (!Object.keys(body).length) { toast('Rien à enregistrer', 'err'); return; }
+  const travel   = parseInt(document.getElementById('c-travel').value);
+  const thrOpen  = parseInt(document.getElementById('c-thr-open').value);
+  const thrClose = parseInt(document.getElementById('c-thr-close').value);
+  const ssid2    = document.getElementById('c-ssid2').value.trim();
+  const pass2    = document.getElementById('c-pass2').value;
+  body.stop_on_time      = document.getElementById('c-stop-time').checked;
+  body.stop_on_cur_open  = document.getElementById('c-stop-cur-open').checked;
+  body.stop_on_cur_close = document.getElementById('c-stop-cur-close').checked;
+  if (travel > 0)          body.travel_time_ms  = travel;
+  if (thrOpen  > 0)        body.threshold_open  = thrOpen;
+  if (thrClose > 0)        body.threshold_close = thrClose;
+  if (ssid2.length)        body.ssid2     = ssid2;
+  if (pass2.length)        body.password2 = pass2;
   try {
     await api('/api/esp32/config', 'POST', body);
     toast('Configuration envoyée à l\'ESP32');

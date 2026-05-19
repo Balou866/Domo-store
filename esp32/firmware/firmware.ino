@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.1.6"
+#define FIRMWARE_VERSION "1.2.0"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -29,7 +29,12 @@ Adafruit_INA219 ina219;
 Preferences prefs;
 bool ina219_ok = false;
 
-int travelTimeMs = TRAVEL_TIME_DEFAULT;
+int  travelTimeMs       = TRAVEL_TIME_DEFAULT;
+bool stopOnTime         = true;
+bool stopOnCurrentOpen  = false;
+int  thresholdOpen      = 1000;
+bool stopOnCurrentClose = false;
+int  thresholdClose     = 1000;
 
 enum MotorState { STOPPED, OPENING, CLOSING };
 MotorState motorState = STOPPED;
@@ -74,7 +79,7 @@ void motorOpen() {
   digitalWrite(PIN_AIN2, LOW);
   ledcWrite(PIN_PWMA, PWM_DUTY);
   motorState = OPENING;
-  stopAt = millis() + travelTimeMs;
+  stopAt = stopOnTime ? millis() + travelTimeMs : 0;
 }
 
 void motorClose() {
@@ -83,7 +88,7 @@ void motorClose() {
   digitalWrite(PIN_AIN2, HIGH);
   ledcWrite(PIN_PWMA, PWM_DUTY);
   motorState = CLOSING;
-  stopAt = millis() + travelTimeMs;
+  stopAt = stopOnTime ? millis() + travelTimeMs : 0;
 }
 
 void motorStop() {
@@ -139,11 +144,15 @@ void handleStatus() {
 
 void handleGetConfig() {
   addCORSHeaders();
-  StaticJsonDocument<256> doc;
-  doc["travel_time_ms"] = travelTimeMs;
-  doc["ssid1"]          = WIFI_SSID;
-  doc["ssid2"]          = prefs.getString("ssid2", "");
-  // password2 non exposé
+  StaticJsonDocument<512> doc;
+  doc["travel_time_ms"]      = travelTimeMs;
+  doc["stop_on_time"]        = stopOnTime;
+  doc["stop_on_cur_open"]    = stopOnCurrentOpen;
+  doc["threshold_open"]      = thresholdOpen;
+  doc["stop_on_cur_close"]   = stopOnCurrentClose;
+  doc["threshold_close"]     = thresholdClose;
+  doc["ssid1"]               = WIFI_SSID;
+  doc["ssid2"]               = prefs.getString("ssid2", "");
   String out;
   serializeJson(doc, out);
   server.send(200, "application/json", out);
@@ -183,25 +192,20 @@ void handleOTADone() {
 
 void handleSetConfig() {
   addCORSHeaders();
-  StaticJsonDocument<256> doc;
+  StaticJsonDocument<512> doc;
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"JSON invalide\"}");
     return;
   }
-  if (doc.containsKey("travel_time_ms")) {
-    travelTimeMs = doc["travel_time_ms"].as<int>();
-    prefs.putInt("travel_ms", travelTimeMs);
-    Serial.println("travel_time_ms → " + String(travelTimeMs));
-  }
-  if (doc.containsKey("ssid2")) {
-    prefs.putString("ssid2", doc["ssid2"].as<String>());
-    Serial.println("ssid2 → " + doc["ssid2"].as<String>());
-  }
-  if (doc.containsKey("password2")) {
-    prefs.putString("pass2", doc["password2"].as<String>());
-    Serial.println("password2 mis à jour");
-  }
+  if (doc.containsKey("travel_time_ms"))    { travelTimeMs = doc["travel_time_ms"].as<int>();          prefs.putInt("travel_ms",  travelTimeMs); }
+  if (doc.containsKey("stop_on_time"))      { stopOnTime = doc["stop_on_time"].as<bool>();              prefs.putBool("stop_time", stopOnTime); }
+  if (doc.containsKey("stop_on_cur_open"))  { stopOnCurrentOpen = doc["stop_on_cur_open"].as<bool>();  prefs.putBool("stop_cur_o", stopOnCurrentOpen); }
+  if (doc.containsKey("threshold_open"))    { thresholdOpen = doc["threshold_open"].as<int>();          prefs.putInt("thr_open",   thresholdOpen); }
+  if (doc.containsKey("stop_on_cur_close")) { stopOnCurrentClose = doc["stop_on_cur_close"].as<bool>(); prefs.putBool("stop_cur_c", stopOnCurrentClose); }
+  if (doc.containsKey("threshold_close"))   { thresholdClose = doc["threshold_close"].as<int>();        prefs.putInt("thr_close",  thresholdClose); }
+  if (doc.containsKey("ssid2"))    { prefs.putString("ssid2", doc["ssid2"].as<String>()); }
+  if (doc.containsKey("password2")){ prefs.putString("pass2", doc["password2"].as<String>()); }
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -218,8 +222,12 @@ void setup() {
   ledcAttach(PIN_PWMA, 5000, 8);
 
   prefs.begin("volet", false);
-  travelTimeMs = prefs.getInt("travel_ms", TRAVEL_TIME_DEFAULT);
-  Serial.println("travel_time_ms = " + String(travelTimeMs));
+  travelTimeMs       = prefs.getInt("travel_ms",  TRAVEL_TIME_DEFAULT);
+  stopOnTime         = prefs.getBool("stop_time", true);
+  stopOnCurrentOpen  = prefs.getBool("stop_cur_o", false);
+  thresholdOpen      = prefs.getInt("thr_open",   1000);
+  stopOnCurrentClose = prefs.getBool("stop_cur_c", false);
+  thresholdClose     = prefs.getInt("thr_close",  1000);
 
   ina219_ok = ina219.begin();
   if (!ina219_ok) Serial.println("INA219 non détecté");
@@ -251,12 +259,27 @@ void setup() {
   Serial.println("Serveur HTTP démarré");
 }
 
+void checkCurrentStop() {
+  float cur = ina219.getCurrent_mA();
+  if (motorState == OPENING && stopOnCurrentOpen && cur > thresholdOpen) {
+    motorStop();
+    Serial.printf("Arrêt courant ouverture: %.0f mA\n", cur);
+  } else if (motorState == CLOSING && stopOnCurrentClose && cur > thresholdClose) {
+    motorStop();
+    Serial.printf("Arrêt courant fermeture: %.0f mA\n", cur);
+  }
+}
+
 void loop() {
   ArduinoOTA.handle();
   server.handleClient();
 
-  if (motorState != STOPPED && millis() >= stopAt) {
-    motorStop();
-    Serial.println("Arrêt automatique fin de course");
+  if (motorState != STOPPED) {
+    if (stopAt != 0 && millis() >= stopAt) {
+      motorStop();
+      Serial.println("Arrêt timer");
+    } else if (ina219_ok) {
+      checkCurrentStop();
+    }
   }
 }
