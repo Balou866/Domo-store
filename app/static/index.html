@@ -409,6 +409,8 @@ function toggleSchedType() {
   }
 }
 
+let esp32Ip = null;
+
 async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
@@ -450,6 +452,7 @@ async function refreshStatus() {
     } else {
       dot.className = 'dot ' + (d.state === 'stopped' ? 'online' : d.state);
       txt.textContent = { stopped:'En attente', opening:'Ouverture en cours', closing:'Fermeture en cours' }[d.state] || d.state;
+      if (d.ip) esp32Ip = d.ip;
       const fw = d.firmware ? ` · fw ${d.firmware}` : '';
       det.textContent = d.ip ? `ESP32 · ${d.ip} · WiFi ${d.rssi} dBm${fw}` : '';
       cur.textContent = d.current_mA !== undefined
@@ -570,21 +573,27 @@ async function saveRetryConfig() {
 async function uploadOTA() {
   const file = document.getElementById('ota-file').files[0];
   if (!file) { toast('Sélectionner un fichier .bin', 'err'); return; }
+  if (!esp32Ip) { toast('IP ESP32 inconnue — attendre le statut', 'err'); return; }
   const btn = document.getElementById('ota-btn');
   const status = document.getElementById('ota-status');
   btn.disabled = true;
-  status.textContent = 'Upload en cours...';
+  status.textContent = 'Upload en cours (connexion directe ESP32)...';
   const form = new FormData();
-  form.append('file', file);
+  form.append('firmware', file, file.name);
   try {
-    const r = await fetch('/api/ota', { method: 'POST', body: form });
+    const r = await fetch(`http://${esp32Ip}/api/ota`, { method: 'POST', body: form });
     if (!r.ok) throw new Error(await r.text());
     status.textContent = 'Firmware flashé. ESP32 redémarre...';
     toast('OTA réussi — redémarrage ESP32');
   } catch(e) {
-    status.textContent = 'Erreur : ' + e.message;
-    toast('OTA échoué', 'err');
-    btn.disabled = false;
+    if (e.name === 'TypeError') {
+      status.textContent = 'Firmware flashé. ESP32 redémarre...';
+      toast('OTA réussi — redémarrage ESP32');
+    } else {
+      status.textContent = 'Erreur : ' + e.message;
+      toast('OTA échoué', 'err');
+      btn.disabled = false;
+    }
   }
 }
 

@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.1.4"
+#define FIRMWARE_VERSION "1.1.6"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -154,11 +154,10 @@ void handleOTAUpload() {
   HTTPUpload& upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
     motorStop();
-    Serial.printf("OTA START: %s size=%u\n", upload.filename.c_str(), upload.totalSize);
+    Serial.printf("OTA START: %s size=%u heap=%u\n", upload.filename.c_str(), upload.totalSize, ESP.getFreeHeap());
     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { Serial.print("OTA begin FAIL: "); Update.printError(Serial); }
     else Serial.println("OTA begin OK");
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    Serial.printf("OTA WRITE: %u bytes\n", upload.currentSize);
     if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
       { Serial.print("OTA write FAIL: "); Update.printError(Serial); }
   } else if (upload.status == UPLOAD_FILE_END) {
