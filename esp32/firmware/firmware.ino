@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.2.0"
+#define FIRMWARE_VERSION "1.2.4"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -39,6 +39,9 @@ int  thresholdClose     = 1000;
 enum MotorState { STOPPED, OPENING, CLOSING };
 MotorState motorState = STOPPED;
 unsigned long stopAt = 0;
+unsigned long motorStartedAt = 0;
+
+#define CURRENT_CHECK_DELAY_MS 500
 
 // --- WiFi ---
 
@@ -79,6 +82,7 @@ void motorOpen() {
   digitalWrite(PIN_AIN2, LOW);
   ledcWrite(PIN_PWMA, PWM_DUTY);
   motorState = OPENING;
+  motorStartedAt = millis();
   stopAt = stopOnTime ? millis() + travelTimeMs : 0;
 }
 
@@ -88,6 +92,7 @@ void motorClose() {
   digitalWrite(PIN_AIN2, HIGH);
   ledcWrite(PIN_PWMA, PWM_DUTY);
   motorState = CLOSING;
+  motorStartedAt = millis();
   stopAt = stopOnTime ? millis() + travelTimeMs : 0;
 }
 
@@ -159,16 +164,18 @@ void handleGetConfig() {
 }
 
 void handleOTAUpload() {
-  addCORSHeaders();
   HTTPUpload& upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
     motorStop();
+    if (Update.isRunning()) Update.abort();
     Serial.printf("OTA START: %s size=%u heap=%u\n", upload.filename.c_str(), upload.totalSize, ESP.getFreeHeap());
     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { Serial.print("OTA begin FAIL: "); Update.printError(Serial); }
     else Serial.println("OTA begin OK");
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-      { Serial.print("OTA write FAIL: "); Update.printError(Serial); }
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      Serial.print("OTA write FAIL: "); Update.printError(Serial);
+      Update.abort();
+    }
   } else if (upload.status == UPLOAD_FILE_END) {
     Serial.printf("OTA END: total=%u\n", upload.totalSize);
     if (Update.end(true)) Serial.println("OTA end OK");
@@ -260,6 +267,7 @@ void setup() {
 }
 
 void checkCurrentStop() {
+  if (millis() - motorStartedAt < CURRENT_CHECK_DELAY_MS) return;
   float cur = ina219.getCurrent_mA();
   if (motorState == OPENING && stopOnCurrentOpen && cur > thresholdOpen) {
     motorStop();
