@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.2.4"
+#define FIRMWARE_VERSION "1.2.6"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -46,6 +46,9 @@ unsigned long motorStartedAt = 0;
 // --- WiFi ---
 
 void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
+  delay(100);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("WiFi principal");
   int tries = 0;
