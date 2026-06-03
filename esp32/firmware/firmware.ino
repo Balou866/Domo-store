@@ -8,18 +8,16 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.2.9"
+#define FIRMWARE_VERSION "1.3.0"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
 
 const int TRAVEL_TIME_DEFAULT = 60000;
 
-// Pins TB6612FNG
-#define PIN_AIN1  26
-#define PIN_AIN2  27
-#define PIN_PWMA  14
-#define PIN_STBY  25
+// Pins BTS7960 (IBT-2)
+#define PIN_RPWM  14  // ouverture
+#define PIN_LPWM  27  // fermeture
 
 // =============================
 
@@ -85,37 +83,28 @@ void connectWiFi() {
 
 // --- Moteur ---
 
-void motorOpen() {
+static inline uint8_t pwmValue() {
+  return constrain(motorSpeed * 255 / 100, 0, 255);
+}
+
+static void motorStart(MotorState dir) {
   spikeCurrent_mA = 0.0;
-  digitalWrite(PIN_STBY, HIGH);
-  digitalWrite(PIN_AIN1, HIGH);
-  digitalWrite(PIN_AIN2, LOW);
-  ledcWrite(PIN_PWMA, constrain(motorSpeed * 255 / 100, 0, 255));
-  motorState = OPENING;
+  ledcWrite(PIN_RPWM, dir == OPENING ? pwmValue() : 0);
+  ledcWrite(PIN_LPWM, dir == CLOSING ? pwmValue() : 0);
+  motorState    = dir;
   motorStartedAt = millis();
   stopAt = stopOnTime ? millis() + travelTimeMs : 0;
 }
 
-void motorClose() {
-  spikeCurrent_mA = 0.0;
-  digitalWrite(PIN_STBY, HIGH);
-  digitalWrite(PIN_AIN1, LOW);
-  digitalWrite(PIN_AIN2, HIGH);
-  ledcWrite(PIN_PWMA, constrain(motorSpeed * 255 / 100, 0, 255));
-  motorState = CLOSING;
-  motorStartedAt = millis();
-  stopAt = stopOnTime ? millis() + travelTimeMs : 0;
-}
+void motorOpen()  { motorStart(OPENING); }
+void motorClose() { motorStart(CLOSING); }
 
 void motorStop() {
-  ledcWrite(PIN_PWMA, 0);
-  digitalWrite(PIN_AIN1, LOW);
-  digitalWrite(PIN_AIN2, LOW);
-  digitalWrite(PIN_STBY, LOW);
+  ledcWrite(PIN_RPWM, 0);
+  ledcWrite(PIN_LPWM, 0);
   motorState = STOPPED;
   stopAt = 0;
-  Serial.printf("motorStop — STBY=%d AIN1=%d AIN2=%d\n",
-    digitalRead(PIN_STBY), digitalRead(PIN_AIN1), digitalRead(PIN_AIN2));
+  Serial.println("motorStop — RPWM=0 LPWM=0");
 }
 
 // --- HTTP ---
@@ -241,10 +230,8 @@ void handleSetConfig() {
 void setup() {
   Serial.begin(115200);
 
-  pinMode(PIN_AIN1, OUTPUT);
-  pinMode(PIN_AIN2, OUTPUT);
-  pinMode(PIN_STBY, OUTPUT);
-  ledcAttach(PIN_PWMA, 20000, 8);  // 20 kHz — doit précéder motorStop()
+  ledcAttach(PIN_RPWM, 20000, 8);
+  ledcAttach(PIN_LPWM, 20000, 8);
   motorStop();
 
   prefs.begin("volet", false);

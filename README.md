@@ -1,6 +1,6 @@
 # Volet Roulant Domotique
 
-Contrôle WiFi d'un store via ESP32 + TB6612FNG. Interface web hébergée en Docker, programmation horaire incluse.
+Contrôle WiFi d'un store via ESP32 + BTS7960 (IBT-2 43A). Interface web hébergée en Docker, programmation horaire incluse.
 
 ---
 
@@ -9,11 +9,11 @@ Contrôle WiFi d'un store via ESP32 + TB6612FNG. Interface web hébergée en Doc
 | Composant | Référence |
 |-----------|-----------|
 | Microcontrôleur | ESP32 DevKitC (USB-C, CH340C ou CP2102) |
-| Driver moteur | TB6612FNG |
+| Driver moteur | BTS7960 / IBT-2 (43A peak) |
 | Capteur courant | INA219 (I2C) |
-| Moteur | ZGY370 / JGY370 DC 12V 15 tr/min |
+| Moteur | 32GP-31ZY DC 12V 112 tr/min 1.3A (6.5A stall) |
 | Breadboard | MB-102 + module alimentation HW131 |
-| Alimentation | Adaptateur DC 12V (courant ≥ 1A) |
+| Alimentation | Adaptateur DC 12V (courant ≥ 2A) |
 
 ---
 
@@ -29,10 +29,11 @@ Vérifier **chaque pin** de chaque composant avant de mettre sous tension.
 |-----------|-------------|
 | IN+ | + adaptateur 12V DC |
 | IN− | − adaptateur 12V DC (GND) |
-| Rail 3.3V | → ESP32 3V3, TB6612 VCC, INA219 VCC |
-| Rail GND | → GND commun (ESP32, TB6612, INA219, alim 12V −) |
+| Rail 3.3V | → ESP32 3V3, INA219 VCC |
+| Rail 5V | → IBT-2 VCC, IBT-2 R_EN, IBT-2 L_EN |
+| Rail GND | → GND commun (ESP32, IBT-2, INA219, alim 12V −) |
 
-> Jumper HW131 sur **3.3V** (pas 5V).
+> HW131 a deux rails indépendants. Mettre le **rail 3.3V** (rail ESP32) et le **rail 5V** (rail IBT-2).
 
 ---
 
@@ -44,33 +45,30 @@ Vérifier **chaque pin** de chaque composant avant de mettre sous tension.
 | GND | Rail **GND** commun |
 | SDA | ESP32 **D21** (GPIO21) |
 | SCL | ESP32 **D22** (GPIO22) |
-| VIN+ | **+12V** depuis adaptateur (avant TB6612) |
-| VIN− | **VM** du TB6612 |
+| VIN+ | **+12V** depuis adaptateur (avant IBT-2) |
+| VIN− | **B+** du BTS7960 (IBT-2) |
 
-> L'INA219 est en série sur la ligne 12V → mesure le courant moteur.
+> L'INA219 est en série sur la ligne 12V → mesure le courant total entrant dans le driver.
 
 ---
 
-### TB6612FNG (driver moteur — tous les pins)
+### BTS7960 / IBT-2 (driver moteur)
 
-| Pin TB6612FNG | Branchement |
-|---------------|-------------|
-| VM | **+12V** depuis INA219 VIN− |
-| VCC | Rail **3.3V** (HW131) |
+| Pin IBT-2 | Branchement |
+|-----------|-------------|
+| VCC | Rail **5V** (HW131) |
 | GND | Rail **GND** commun |
-| STBY | ESP32 **D25** (GPIO25) |
-| AIN1 | ESP32 **D26** (GPIO26) |
-| AIN2 | ESP32 **D27** (GPIO27) |
-| PWMA | ESP32 **D14** (GPIO14) |
-| AOUT1 | Moteur **fil 1** |
-| AOUT2 | Moteur **fil 2** |
-| BIN1 | **non connecté** (canal B inutilisé) |
-| BIN2 | **non connecté** |
-| PWMB | **non connecté** |
-| BOUT1 | **non connecté** |
-| BOUT2 | **non connecté** |
+| RPWM | ESP32 **D14** (GPIO14) — PWM ouverture |
+| LPWM | ESP32 **D27** (GPIO27) — PWM fermeture |
+| R_EN | Rail **5V** (câblé direct — toujours actif) |
+| L_EN | Rail **5V** (câblé direct — toujours actif) |
+| B+ | **+12V** depuis INA219 VIN− |
+| B− | Rail **GND** commun |
+| M+ | Moteur **fil 1** |
+| M− | Moteur **fil 2** |
 
-> Si le moteur tourne dans le mauvais sens : inverser AOUT1 ↔ AOUT2.
+> Si le moteur tourne dans le mauvais sens : inverser M+ ↔ M−.
+> GPIO14/GPIO27 (3.3V) suffisent — seuil logique BTS7960 ≈ 2.4V.
 
 ---
 
@@ -78,24 +76,22 @@ Vérifier **chaque pin** de chaque composant avant de mettre sous tension.
 
 | Pin ESP32 | Rôle | Branché sur |
 |-----------|------|-------------|
-| 3V3 | Alimentation logique | Rail 3.3V HW131, TB6612 VCC, INA219 VCC |
+| 3V3 | Alimentation logique | Rail 3.3V HW131, INA219 VCC |
 | GND | Masse | Rail GND commun |
-| D14 (GPIO14) | PWM vitesse moteur | TB6612 PWMA |
+| D14 (GPIO14) | PWM ouverture | IBT-2 RPWM |
 | D21 (GPIO21) | I2C SDA | INA219 SDA |
 | D22 (GPIO22) | I2C SCL | INA219 SCL |
-| D25 (GPIO25) | Standby driver | TB6612 STBY |
-| D26 (GPIO26) | Direction moteur A | TB6612 AIN1 |
-| D27 (GPIO27) | Direction moteur B | TB6612 AIN2 |
+| D27 (GPIO27) | PWM fermeture | IBT-2 LPWM |
 | Tous autres pins | **non connectés** | — |
 
 ---
 
-### Moteur ZGY370 / JGY370
+### Moteur 32GP-31ZY
 
 | Fil moteur | Branchement |
 |------------|-------------|
-| Fil 1 (ex: rouge) | TB6612 **AOUT1** |
-| Fil 2 (ex: noir) | TB6612 **AOUT2** |
+| Fil 1 (ex: rouge) | IBT-2 **M+** |
+| Fil 2 (ex: noir) | IBT-2 **M−** |
 
 ---
 
@@ -106,12 +102,12 @@ Adaptateur 12V (+)
     └── HW131 IN+
     └── INA219 VIN+
               └── INA219 VIN−
-                        └── TB6612 VM
+                        └── BTS7960 B+
                                   └── (interne H-bridge)
-                                            ├── AOUT1 → Moteur fil 1
-                                            └── AOUT2 → Moteur fil 2
+                                            ├── M+ → Moteur fil 1
+                                            └── M− → Moteur fil 2
 
-Adaptateur 12V (−) → GND commun ← ESP32 GND ← TB6612 GND ← INA219 GND
+Adaptateur 12V (−) → GND commun ← ESP32 GND ← BTS7960 B− ← INA219 GND
 ```
 
 ---
@@ -306,8 +302,8 @@ curl -X POST http://192.168.1.XXX/api/config \
 | Symptôme | Cause probable | Solution |
 |----------|---------------|----------|
 | « ESP32 hors ligne » dans l'UI | IP incorrecte | Vérifier `ESP32_URL` dans docker-compose |
-| Moteur tourne dans le mauvais sens | AOUT1/AOUT2 inversés | Échanger les deux fils moteur |
-| Moteur ne tourne pas | STBY non câblé | Vérifier D25 → TB6612 STBY |
+| Moteur tourne dans le mauvais sens | M+/M− inversés | Échanger les deux fils moteur |
+| Moteur ne démarre pas | R_EN/L_EN non câblés au 5V | Vérifier fils R_EN et L_EN → rail 5V IBT-2 |
 | Volet ne s'arrête pas | `travel_time_ms` trop grand | Modifier via l'UI → Configuration |
 | Upload Arduino échoue | Mauvais port ou timing | Maintenir BOOT pendant l'upload |
 | Aucun port COM visible | Driver USB absent | Installer CP2102 ou CH340 selon la puce |
@@ -340,7 +336,7 @@ curl -X POST http://192.168.1.XXX/api/config \
 └──────────┬──────────────────┘
            │ GPIO PWM + I2C
 ┌──────────▼──────────────────┐
-│  TB6612FNG → Moteur 12V     │
-│  INA219 → mesure courant    │
+│  BTS7960 (IBT-2) → Moteur 12V  │
+│  INA219 → mesure courant       │
 └─────────────────────────────┘
 ```

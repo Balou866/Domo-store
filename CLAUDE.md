@@ -21,7 +21,7 @@ Ouvrir `esp32/firmware/firmware.ino` dans Arduino IDE. Configurer SSID/password 
 ## Architecture
 
 ```
-Navigateur → FastAPI (port 9090) → ESP32 WebServer (port 80) → TB6612FNG → Moteur
+Navigateur → FastAPI (port 9090) → ESP32 WebServer (port 80) → BTS7960 (IBT-2) → Moteur
 ```
 
 **`app/main.py`** — FastAPI + APScheduler :
@@ -38,7 +38,8 @@ Navigateur → FastAPI (port 9090) → ESP32 WebServer (port 80) → TB6612FNG �
 - Config persistante en NVS (`travel_time_ms`, `ssid2`, `pass2`, `stop_on_cur_open`, `stop_on_cur_close`, `threshold_open`, `threshold_close`) — modifiable à chaud via `POST /api/config` sans reflasher.
 - Moteur géré par timer (`stopAt`) dans `loop()`, pas de thread.
 - INA219 optionnel : si absent au démarrage, `ina219_ok = false` et mesures ignorées.
-- Arrêt par seuil de courant (INA219) : si `stop_on_cur_open/close` activé, le moteur s'arrête quand le courant dépasse `threshold_open/close` (mA) — alternative à l'arrêt purement temporel. Firmware **v1.2.0**.
+- Arrêt par seuil de courant (INA219) : si `stop_on_cur_open/close` activé, le moteur s'arrête quand le courant dépasse `threshold_open/close` (mA) — alternative à l'arrêt purement temporel. Firmware **v1.3.0**.
+- Driver moteur : **BTS7960 (IBT-2)**. Pins : RPWM=GPIO14 (ouverture), LPWM=GPIO27 (fermeture). R_EN/L_EN câblés au 5V (toujours actifs). Remplace TB6612FNG grillé.
 
 ## Points clés
 
