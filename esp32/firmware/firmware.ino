@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.2.8"
+#define FIRMWARE_VERSION "1.2.9"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -108,12 +108,14 @@ void motorClose() {
 }
 
 void motorStop() {
+  ledcWrite(PIN_PWMA, 0);
   digitalWrite(PIN_AIN1, LOW);
   digitalWrite(PIN_AIN2, LOW);
-  ledcWrite(PIN_PWMA, 0);
   digitalWrite(PIN_STBY, LOW);
   motorState = STOPPED;
   stopAt = 0;
+  Serial.printf("motorStop — STBY=%d AIN1=%d AIN2=%d\n",
+    digitalRead(PIN_STBY), digitalRead(PIN_AIN1), digitalRead(PIN_AIN2));
 }
 
 // --- HTTP ---
@@ -242,9 +244,8 @@ void setup() {
   pinMode(PIN_AIN1, OUTPUT);
   pinMode(PIN_AIN2, OUTPUT);
   pinMode(PIN_STBY, OUTPUT);
+  ledcAttach(PIN_PWMA, 20000, 8);  // 20 kHz — doit précéder motorStop()
   motorStop();
-
-  ledcAttach(PIN_PWMA, 5000, 8);
 
   prefs.begin("volet", false);
   travelTimeMs       = prefs.getInt("travel_ms",  TRAVEL_TIME_DEFAULT);
