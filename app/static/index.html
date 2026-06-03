@@ -262,6 +262,37 @@
     margin-right: 10px;
   }
   #ota-status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 16px; }
+
+  .speed-row { margin-top: 14px; }
+  .speed-row label { font-size: 11px; color: var(--muted); }
+  .speed-controls { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .speed-controls input[type=range] { flex: 1; accent-color: var(--blue); cursor: pointer; height: 4px; }
+  #speed-pct { font-size: 14px; font-weight: 700; min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: var(--blue); }
+
+  .cmd-row { display: flex; gap: 10px; align-items: stretch; margin-top: 12px; }
+  .cmd-row .btn-row { flex: 1; margin-top: 0; }
+
+  #spike-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    min-width: 76px;
+    text-align: center;
+    gap: 3px;
+  }
+  #spike-value {
+    font-size: 17px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--amber);
+    line-height: 1.2;
+  }
+  #spike-label { font-size: 10px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -281,16 +312,29 @@
   </div>
   <div id="status-detail"></div>
   <div id="status-current"></div>
-  <div class="btn-row" style="margin-top:18px;">
-    <button class="btn open"  onclick="cmd('open')">
-      <span class="btn-icon">&#8593;</span>Ouvrir
-    </button>
-    <button class="btn stop"  onclick="cmd('stop')">
-      <span class="btn-icon">&#9632;</span>Stop
-    </button>
-    <button class="btn close" onclick="cmd('close')">
-      <span class="btn-icon">&#8595;</span>Fermer
-    </button>
+  <div class="speed-row">
+    <label>Vitesse moteur</label>
+    <div class="speed-controls">
+      <input type="range" id="speed-slider" min="10" max="100" step="5" value="100" oninput="onSpeedChange()">
+      <span id="speed-pct">100%</span>
+    </div>
+  </div>
+  <div class="cmd-row">
+    <div class="btn-row">
+      <button class="btn open"  onclick="cmd('open')">
+        <span class="btn-icon">&#8593;</span>Ouvrir
+      </button>
+      <button class="btn stop"  onclick="cmd('stop')">
+        <span class="btn-icon">&#9632;</span>Stop
+      </button>
+      <button class="btn close" onclick="cmd('close')">
+        <span class="btn-icon">&#8595;</span>Fermer
+      </button>
+    </div>
+    <div id="spike-panel">
+      <div id="spike-value">—</div>
+      <div id="spike-label">Pic démarrage</div>
+    </div>
   </div>
 </div>
 
@@ -441,11 +485,58 @@ function toast(msg, type = 'ok') {
   el._t = setTimeout(() => el.className = '', 2500);
 }
 
+const SPIKE_POLLS = 7;
+const SPIKE_INTERVAL_MS = 220;
+
+function setSpeedDisplay(pct) {
+  document.getElementById('speed-slider').value = pct;
+  document.getElementById('speed-pct').textContent = pct + '%';
+}
+
+function rssiHtml(rssi, fw) {
+  const color = rssi >= -55 ? 'var(--green)' : rssi >= -70 ? 'var(--amber)' : 'var(--red)';
+  const icon  = rssi >= -55 ? '▲▲▲' : rssi >= -70 ? '▲▲·' : '▲··';
+  return `<span style="color:${color};font-variant-numeric:tabular-nums;" title="${rssi} dBm">${icon} ${rssi} dBm</span>${fw}`;
+}
+
+let speedTimer = null;
+function onSpeedChange() {
+  const pct = parseInt(document.getElementById('speed-slider').value);
+  setSpeedDisplay(pct);
+  clearTimeout(speedTimer);
+  speedTimer = setTimeout(() => {
+    api('/api/esp32/config', 'POST', { motor_speed: pct })
+      .then(() => toast('Vitesse : ' + pct + '%'))
+      .catch(() => toast('Erreur vitesse', 'err'));
+  }, 600);
+}
+
+async function trackSpike() {
+  const el = document.getElementById('spike-value');
+  el.textContent = '…';
+  el.style.color = 'var(--muted)';
+  let max = 0;
+  for (let i = 0; i < SPIKE_POLLS; i++) {
+    await new Promise(r => setTimeout(r, SPIKE_INTERVAL_MS));
+    try {
+      const d = await api('/api/status');
+      const v = d.spike_current_mA !== undefined ? d.spike_current_mA : d.current_mA;
+      if (v !== undefined && v > max) {
+        max = v;
+        el.textContent = Math.round(max) + ' mA';
+        el.style.color = 'var(--amber)';
+      }
+    } catch {}
+  }
+  if (max === 0) { el.textContent = '—'; el.style.color = 'var(--muted)'; }
+}
+
 async function cmd(action) {
   try {
     await api('/api/control/' + action);
     toast({ open:'Ouverture...', close:'Fermeture...', stop:'Arrêt' }[action]);
     setTimeout(refreshStatus, 800);
+    if (action === 'open' || action === 'close') trackSpike();
   } catch(e) {
     toast('Erreur : ESP32 inaccessible', 'err');
   }
@@ -468,7 +559,7 @@ async function refreshStatus() {
       txt.textContent = { stopped:'En attente', opening:'Ouverture en cours', closing:'Fermeture en cours' }[d.state] || d.state;
       if (d.ip) esp32Ip = d.ip;
       const fw = d.firmware ? ` · fw ${d.firmware}` : '';
-      det.textContent = d.ip ? `ESP32 · ${d.ip} · WiFi ${d.rssi} dBm${fw}` : '';
+      det.innerHTML = d.ip ? `ESP32 · ${d.ip} · ${rssiHtml(d.rssi, fw)}` : '';
       cur.textContent = d.current_mA !== undefined
         ? `Courant : ${d.current_mA.toFixed(0)} mA · ${d.voltage_V.toFixed(1)} V`
         : '';
@@ -546,6 +637,7 @@ async function loadConfig() {
     document.getElementById('c-stop-cur-close').checked = d.stop_on_cur_close ?? false;
     if (d.threshold_open  !== undefined) document.getElementById('c-thr-open').value  = d.threshold_open;
     if (d.threshold_close !== undefined) document.getElementById('c-thr-close').value = d.threshold_close;
+    if (d.motor_speed !== undefined) setSpeedDisplay(d.motor_speed);
     const info = document.getElementById('config-current');
     info.textContent = `WiFi principal : ${d.ssid1 || '—'}` + (d.ssid2 ? ` · Secours : ${d.ssid2}` : '');
   } catch { }

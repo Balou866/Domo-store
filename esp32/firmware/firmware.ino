@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.2.6"
+#define FIRMWARE_VERSION "1.2.8"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -21,13 +21,15 @@ const int TRAVEL_TIME_DEFAULT = 60000;
 #define PIN_PWMA  14
 #define PIN_STBY  25
 
-#define PWM_DUTY  255
 // =============================
 
 WebServer server(80);
 Adafruit_INA219 ina219;
 Preferences prefs;
 bool ina219_ok = false;
+
+int  motorSpeed         = 100;
+float spikeCurrent_mA   = 0.0;
 
 int  travelTimeMs       = TRAVEL_TIME_DEFAULT;
 bool stopOnTime         = true;
@@ -40,12 +42,15 @@ enum MotorState { STOPPED, OPENING, CLOSING };
 MotorState motorState = STOPPED;
 unsigned long stopAt = 0;
 unsigned long motorStartedAt = 0;
+unsigned long lastWifiCheck = 0;
+#define WIFI_CHECK_INTERVAL_MS 20000
 
 #define CURRENT_CHECK_DELAY_MS 500
 
 // --- WiFi ---
 
 void connectWiFi() {
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(true);
   delay(100);
@@ -71,6 +76,7 @@ void connectWiFi() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    WiFi.setAutoReconnect(true);
     Serial.println("\nIP: " + WiFi.localIP().toString());
   } else {
     Serial.println("\nEchec WiFi — aucun réseau disponible");
@@ -80,20 +86,22 @@ void connectWiFi() {
 // --- Moteur ---
 
 void motorOpen() {
+  spikeCurrent_mA = 0.0;
   digitalWrite(PIN_STBY, HIGH);
   digitalWrite(PIN_AIN1, HIGH);
   digitalWrite(PIN_AIN2, LOW);
-  ledcWrite(PIN_PWMA, PWM_DUTY);
+  ledcWrite(PIN_PWMA, constrain(motorSpeed * 255 / 100, 0, 255));
   motorState = OPENING;
   motorStartedAt = millis();
   stopAt = stopOnTime ? millis() + travelTimeMs : 0;
 }
 
 void motorClose() {
+  spikeCurrent_mA = 0.0;
   digitalWrite(PIN_STBY, HIGH);
   digitalWrite(PIN_AIN1, LOW);
   digitalWrite(PIN_AIN2, HIGH);
-  ledcWrite(PIN_PWMA, PWM_DUTY);
+  ledcWrite(PIN_PWMA, constrain(motorSpeed * 255 / 100, 0, 255));
   motorState = CLOSING;
   motorStartedAt = millis();
   stopAt = stopOnTime ? millis() + travelTimeMs : 0;
@@ -134,16 +142,18 @@ void handleCommand() {
 
 void handleStatus() {
   addCORSHeaders();
-  StaticJsonDocument<256> doc;
+  StaticJsonDocument<320> doc;
   const char* states[] = {"stopped", "opening", "closing"};
   doc["firmware"]      = FIRMWARE_VERSION;
   doc["state"]         = states[motorState];
   doc["ip"]            = WiFi.localIP().toString();
   doc["rssi"]          = WiFi.RSSI();
   doc["travel_time_ms"] = travelTimeMs;
+  doc["motor_speed"]   = motorSpeed;
   if (ina219_ok) {
-    doc["current_mA"] = ina219.getCurrent_mA();
-    doc["voltage_V"]  = ina219.getBusVoltage_V();
+    doc["current_mA"]       = ina219.getCurrent_mA();
+    doc["voltage_V"]        = ina219.getBusVoltage_V();
+    doc["spike_current_mA"] = spikeCurrent_mA;
   }
   String out;
   serializeJson(doc, out);
@@ -159,6 +169,7 @@ void handleGetConfig() {
   doc["threshold_open"]      = thresholdOpen;
   doc["stop_on_cur_close"]   = stopOnCurrentClose;
   doc["threshold_close"]     = thresholdClose;
+  doc["motor_speed"]         = motorSpeed;
   doc["ssid1"]               = WIFI_SSID;
   doc["ssid2"]               = prefs.getString("ssid2", "");
   String out;
@@ -214,6 +225,10 @@ void handleSetConfig() {
   if (doc.containsKey("threshold_open"))    { thresholdOpen = doc["threshold_open"].as<int>();          prefs.putInt("thr_open",   thresholdOpen); }
   if (doc.containsKey("stop_on_cur_close")) { stopOnCurrentClose = doc["stop_on_cur_close"].as<bool>(); prefs.putBool("stop_cur_c", stopOnCurrentClose); }
   if (doc.containsKey("threshold_close"))   { thresholdClose = doc["threshold_close"].as<int>();        prefs.putInt("thr_close",  thresholdClose); }
+  if (doc.containsKey("motor_speed")) {
+    motorSpeed = constrain(doc["motor_speed"].as<int>(), 10, 100);
+    prefs.putInt("motor_spd", motorSpeed);
+  }
   if (doc.containsKey("ssid2"))    { prefs.putString("ssid2", doc["ssid2"].as<String>()); }
   if (doc.containsKey("password2")){ prefs.putString("pass2", doc["password2"].as<String>()); }
   server.send(200, "application/json", "{\"ok\":true}");
@@ -238,6 +253,7 @@ void setup() {
   thresholdOpen      = prefs.getInt("thr_open",   1000);
   stopOnCurrentClose = prefs.getBool("stop_cur_c", false);
   thresholdClose     = prefs.getInt("thr_close",  1000);
+  motorSpeed         = prefs.getInt("motor_spd",  100);
 
   ina219_ok = ina219.begin();
   if (!ina219_ok) Serial.println("INA219 non détecté");
@@ -285,7 +301,20 @@ void loop() {
   ArduinoOTA.handle();
   server.handleClient();
 
+  if (millis() - lastWifiCheck > WIFI_CHECK_INTERVAL_MS) {
+    lastWifiCheck = millis();
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi perdu — reconnexion...");
+      connectWiFi();
+      lastWifiCheck = millis();
+    }
+  }
+
   if (motorState != STOPPED) {
+    if (ina219_ok && millis() - motorStartedAt < 800) {
+      float cur = ina219.getCurrent_mA();
+      if (cur > spikeCurrent_mA) spikeCurrent_mA = cur;
+    }
     if (stopAt != 0 && millis() >= stopAt) {
       motorStop();
       Serial.println("Arrêt timer");
