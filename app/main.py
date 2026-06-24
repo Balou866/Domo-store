@@ -51,27 +51,25 @@ def save_schedules(schedules: list):
     save_json(DATA_FILE, schedules)
 
 
-async def send_command(action: str, position: int | None = None):
-    url = f"{ESP32_URL}/api/position?p={position}" if position is not None else f"{ESP32_URL}/api/{action}"
+async def send_command(action: str):
     async with httpx.AsyncClient(timeout=5.0) as client:
-        r = await client.get(url)
+        r = await client.get(f"{ESP32_URL}/api/{action}")
         r.raise_for_status()
 
 
-async def send_command_with_retry(action: str, position: int | None = None):
+async def send_command_with_retry(action: str):
     retries = retry_config.retries
     delay = retry_config.delay
-    label = f"position {position}%" if position is not None else action
     for attempt in range(1, retries + 1):
         try:
-            await send_command(action, position)
-            logging.info("Job %s OK (tentative %d/%d)", label, attempt, retries)
+            await send_command(action)
+            logging.info("Job %s OK (tentative %d/%d)", action, attempt, retries)
             return
         except Exception as e:
-            logging.warning("Job %s échoué (tentative %d/%d) : %s", label, attempt, retries, e)
+            logging.warning("Job %s échoué (tentative %d/%d) : %s", action, attempt, retries, e)
             if attempt < retries:
                 await asyncio.sleep(delay)
-    logging.error("Job %s abandonné après %d tentatives", label, retries)
+    logging.error("Job %s abandonné après %d tentatives", action, retries)
 
 
 def rebuild_jobs(schedules: list):
@@ -95,7 +93,7 @@ def rebuild_jobs(schedules: list):
         scheduler.add_job(
             send_command_with_retry,
             trigger,
-            args=[s["action"], s.get("position")],
+            args=[s["action"]],
             id=s["id"],
             replace_existing=True,
         )
@@ -129,7 +127,6 @@ class Schedule(BaseModel):
     minute: int
     days: str = "*"
     one_time_date: date | None = None
-    position: int | None = None
     enabled: bool = True
     label: str = ""
 
@@ -141,54 +138,6 @@ async def control(action: str):
     try:
         await send_command(action)
         return {"ok": True, "action": action}
-    except Exception as e:
-        raise HTTPException(503, f"ESP32 inaccessible : {e}")
-
-
-@app.get("/api/position/{pct}")
-async def position(pct: int):
-    if not 0 <= pct <= 100:
-        raise HTTPException(400, "Position 0-100")
-    try:
-        await send_command("position", pct)
-        return {"ok": True, "target": pct}
-    except Exception as e:
-        raise HTTPException(503, f"ESP32 inaccessible : {e}")
-
-
-@app.get("/api/setpos/{pct}")
-async def setpos(pct: int):
-    if not 0 <= pct <= 100:
-        raise HTTPException(400, "Position 0-100")
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{ESP32_URL}/api/setpos?p={pct}")
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        raise HTTPException(503, f"ESP32 inaccessible : {e}")
-
-
-@app.get("/api/force/{direction}")
-async def force(direction: str):
-    if direction not in ("open", "close"):
-        raise HTTPException(400, "Direction open|close")
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{ESP32_URL}/api/force?dir={direction}")
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        raise HTTPException(503, f"ESP32 inaccessible : {e}")
-
-
-@app.post("/api/calibrate")
-async def calibrate():
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.post(f"{ESP32_URL}/api/calibrate")
-            r.raise_for_status()
-            return r.json()
     except Exception as e:
         raise HTTPException(503, f"ESP32 inaccessible : {e}")
 

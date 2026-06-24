@@ -267,28 +267,7 @@
   .speed-row label { font-size: 11px; color: var(--muted); }
   .speed-controls { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
   .speed-controls input[type=range] { flex: 1; accent-color: var(--blue); cursor: pointer; height: 4px; }
-
-  .pos-row { margin-top: 14px; }
-  .pos-row label { font-size: 11px; color: var(--muted); }
-  .pos-row #pos-value { color: var(--blue); font-weight: 700; font-variant-numeric: tabular-nums; }
-  .pos-bar { height: 6px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin: 8px 0; }
-  .pos-fill { height: 100%; background: var(--blue); width: 0%; transition: width 0.4s; }
-
-  .speed-levels { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 6px; }
-  .lvl-btn {
-    padding: 8px; border: 1px solid var(--border); border-radius: 6px;
-    background: var(--surface2); color: var(--muted); font-size: 12px; cursor: pointer;
-    transition: all 0.15s;
-  }
-  .lvl-btn:hover { border-color: rgba(255,255,255,0.2); }
-  .lvl-btn.active { border-color: var(--blue); background: var(--blue-dim); color: var(--blue); font-weight: 600; }
-
-  .btn-mini {
-    padding: 8px 12px; border: 1px solid rgba(79,156,249,0.3); border-radius: 6px;
-    background: var(--blue-dim); color: var(--blue); font-size: 12px; font-weight: 500;
-    cursor: pointer; white-space: nowrap; transition: all 0.15s;
-  }
-  .btn-mini:hover { background: rgba(79,156,249,0.25); }
+  #speed-pct { font-size: 14px; font-weight: 700; min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: var(--blue); }
 
   .cmd-row { display: flex; gap: 10px; align-items: stretch; margin-top: 12px; }
   .cmd-row .btn-row { flex: 1; margin-top: 0; }
@@ -333,22 +312,11 @@
   </div>
   <div id="status-detail"></div>
   <div id="status-current"></div>
-
-  <div class="pos-row">
-    <label>Position <span id="pos-value">—</span></label>
-    <div class="pos-bar"><div class="pos-fill" id="pos-fill"></div></div>
-    <div class="speed-controls">
-      <input type="range" id="pos-slider" min="0" max="100" step="5" value="0">
-      <button class="btn-mini" onclick="goToPosition()">Aller à <span id="pos-target">0</span>%</button>
-    </div>
-  </div>
-
   <div class="speed-row">
     <label>Vitesse moteur</label>
-    <div class="speed-levels">
-      <button class="lvl-btn" data-lvl="0" onclick="setSpeedLevel(0)">Lente</button>
-      <button class="lvl-btn" data-lvl="1" onclick="setSpeedLevel(1)">Moyenne</button>
-      <button class="lvl-btn" data-lvl="2" onclick="setSpeedLevel(2)">Rapide</button>
+    <div class="speed-controls">
+      <input type="range" id="speed-slider" min="0" max="100" step="5" value="100" oninput="onSpeedChange()">
+      <span id="speed-pct">100%</span>
     </div>
   </div>
   <div class="cmd-row">
@@ -370,74 +338,31 @@
   </div>
 </div>
 
-<!-- Calibration -->
-<div class="card">
-  <div class="card-title">Calibration automatique</div>
-  <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
-    Mesure les temps de course (montée/descente) pour les 3 vitesses via les butées (pic de courant INA219).
-    Le volet va s'ouvrir et se fermer 3 fois. Nécessite l'INA219.
-  </p>
-  <button class="btn-add" id="cal-btn" onclick="startCalibration()">Lancer la calibration</button>
-  <div id="cal-status" style="margin-top:10px;font-size:12px;color:var(--muted);min-height:16px"></div>
-  <div id="cal-results" style="margin-top:8px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums"></div>
-</div>
-
-<!-- Recalage position -->
-<div class="card">
-  <div class="card-title">Recalage position</div>
-  <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
-    Si le store est décalé (bloqué à 0% ou 100% alors qu'il ne l'est pas) :
-    forcer une course complète jusqu'à la butée, ou redéfinir manuellement la position.
-  </p>
-  <div class="speed-levels">
-    <button class="lvl-btn" onclick="forceMove('open')">▲ Forcer montée</button>
-    <button class="lvl-btn" onclick="forceMove('close')">▼ Forcer descente</button>
-  </div>
-  <div class="speed-levels" style="margin-top:8px">
-    <button class="lvl-btn" onclick="setPos(0)">Définir 0% (fermé)</button>
-    <button class="lvl-btn" onclick="setPos(100)">Définir 100% (ouvert)</button>
-  </div>
-</div>
-
 <!-- Configuration ESP32 -->
 <div class="card">
   <div class="card-title">Configuration ESP32</div>
   <div class="sched-form">
-    <div class="field"><label>Vitesse lente (%)</label><input type="number" id="c-spd-lo" min="10" max="100"></div>
-    <div class="field"><label>Vitesse moyenne (%)</label><input type="number" id="c-spd-me" min="10" max="100"></div>
-    <div class="field"><label>Vitesse rapide (%)</label><input type="number" id="c-spd-hi" min="10" max="100"></div>
     <div class="field full" class="field-inline">
-      <input type="checkbox" id="c-soft-start">
-      <label for="c-soft-start" style="margin:0">Démarrage progressif (soft-start)</label>
+      <input type="checkbox" id="c-stop-time" checked>
+      <label for="c-stop-time" style="margin:0">Arrêt par durée (s)</label>
+      <input type="number" id="c-travel" placeholder="ex: 15" min="1" max="120" step="0.5">
     </div>
     <div class="field full" class="field-inline">
       <input type="checkbox" id="c-stop-cur-open">
       <label for="c-stop-cur-open" style="margin:0">Arrêt courant montée (mA)</label>
-      <input type="number" id="c-thr-open" placeholder="ex: 800" min="50" max="5000">
+      <input type="number" id="c-thr-open" placeholder="ex: 800" min="50" max="8000">
     </div>
     <div class="field full" class="field-inline">
       <input type="checkbox" id="c-stop-cur-close">
       <label for="c-stop-cur-close" style="margin:0">Arrêt courant descente (mA)</label>
-      <input type="number" id="c-thr-close" placeholder="ex: 800" min="50" max="5000">
+      <input type="number" id="c-thr-close" placeholder="ex: 800" min="50" max="8000">
     </div>
-    <div class="field full">
-      <label>Seuil courant calibration (mA)</label>
-      <input type="number" id="c-cal-thr" placeholder="ex: 1200" min="100" max="8000">
+    <div class="field full" class="field-inline">
+      <input type="checkbox" id="c-soft-start">
+      <label for="c-soft-start" style="margin:0">Démarrage progressif (soft-start)</label>
     </div>
   </div>
   <button class="btn-add" onclick="saveConfig()">Enregistrer la configuration</button>
-  <details style="margin-top:12px">
-    <summary style="font-size:12px;color:var(--muted);cursor:pointer">Temps de course (avancé)</summary>
-    <div class="sched-form" style="margin-top:10px">
-      <div class="field"><label>Montée lente (ms)</label><input type="number" id="c-to-lo" min="500"></div>
-      <div class="field"><label>Descente lente (ms)</label><input type="number" id="c-tc-lo" min="500"></div>
-      <div class="field"><label>Montée moy. (ms)</label><input type="number" id="c-to-me" min="500"></div>
-      <div class="field"><label>Descente moy. (ms)</label><input type="number" id="c-tc-me" min="500"></div>
-      <div class="field"><label>Montée rapide (ms)</label><input type="number" id="c-to-hi" min="500"></div>
-      <div class="field"><label>Descente rapide (ms)</label><input type="number" id="c-tc-hi" min="500"></div>
-    </div>
-    <button class="btn-add" onclick="saveTravelTimes()" style="margin-top:4px">Enregistrer les temps</button>
-  </details>
   <div id="config-current" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
   <button class="btn-add" onclick="rebootEsp32()" style="margin-top:10px;background:rgba(244,112,103,0.12);border-color:rgba(244,112,103,0.3);color:var(--red)">Redémarrer l'ESP32</button>
 </div>
@@ -512,10 +437,6 @@
       <input type="date" id="s-date">
     </div>
     <div class="field full">
-      <label>Position cible (optionnel, %) — prioritaire sur Action</label>
-      <input type="number" id="s-position" placeholder="ex: 50 (vide = ouvrir/fermer complet)" min="0" max="100">
-    </div>
-    <div class="field full">
       <label>Label (optionnel)</label>
       <input type="text" id="s-label" placeholder="ex: Réveil matin">
     </div>
@@ -563,53 +484,30 @@ function toast(msg, type = 'ok') {
 
 const SPIKE_POLLS = 7;
 const SPIKE_INTERVAL_MS = 220;
+const CURRENT_POLL_MS = 500;
 
-let currentLevel = 2;
-function setSpeedLevelUI(lvl) {
-  currentLevel = lvl;
-  document.querySelectorAll('.lvl-btn').forEach(b => {
-    b.classList.toggle('active', parseInt(b.dataset.lvl) === lvl);
-  });
+function renderCurrent(d) {
+  document.getElementById('status-current').textContent =
+    d.current_mA !== undefined
+      ? `Courant : ${d.current_mA.toFixed(0)} mA · ${d.voltage_V.toFixed(1)} V`
+      : '';
 }
 
-async function setSpeedLevel(lvl) {
-  setSpeedLevelUI(lvl);
+let curPolling = false;
+async function pollCurrent() {
+  if (curPolling) return;            // évite l'empilement si l'ESP32 répond lentement
+  curPolling = true;
   try {
-    await api('/api/esp32/config', 'POST', { speed_level: lvl });
-    toast('Vitesse : ' + ['Lente','Moyenne','Rapide'][lvl]);
-  } catch { toast('Erreur vitesse', 'err'); }
+    const d = await api('/api/status');
+    if (d.state !== 'offline') renderCurrent(d);
+  } catch {} finally {
+    curPolling = false;
+  }
 }
 
-function setPositionUI(pct) {
-  document.getElementById('pos-value').textContent = pct + '%';
-  document.getElementById('pos-fill').style.width = pct + '%';
-}
-
-async function goToPosition() {
-  const pct = parseInt(document.getElementById('pos-slider').value);
-  try {
-    await api('/api/position/' + pct);
-    toast('Position cible : ' + pct + '%');
-    setTimeout(refreshStatus, 800);
-    trackSpike();
-  } catch { toast('Erreur : ESP32 inaccessible', 'err'); }
-}
-
-async function forceMove(dir) {
-  try {
-    await api('/api/force/' + dir);
-    toast('Course forcée : ' + (dir === 'open' ? 'montée' : 'descente'));
-    setTimeout(refreshStatus, 800);
-    trackSpike();
-  } catch { toast('Erreur : ESP32 inaccessible', 'err'); }
-}
-
-async function setPos(pct) {
-  try {
-    await api('/api/setpos/' + pct);
-    toast('Position redéfinie à ' + pct + '%');
-    refreshStatus();
-  } catch(e) { toast('Erreur (moteur en mouvement ?)', 'err'); }
+function setSpeedDisplay(pct) {
+  document.getElementById('speed-slider').value = pct;
+  document.getElementById('speed-pct').textContent = pct + '%';
 }
 
 function rssiHtml(rssi, fw) {
@@ -618,9 +516,17 @@ function rssiHtml(rssi, fw) {
   return `<span style="color:${color};font-variant-numeric:tabular-nums;" title="${rssi} dBm">${icon} ${rssi} dBm</span>${fw}`;
 }
 
-document.getElementById('pos-slider').addEventListener('input', e => {
-  document.getElementById('pos-target').textContent = e.target.value;
-});
+let speedTimer = null;
+function onSpeedChange() {
+  const pct = parseInt(document.getElementById('speed-slider').value);
+  setSpeedDisplay(pct);
+  clearTimeout(speedTimer);
+  speedTimer = setTimeout(() => {
+    api('/api/esp32/config', 'POST', { motor_speed: pct })
+      .then(() => toast('Vitesse : ' + pct + '%'))
+      .catch(() => toast('Erreur vitesse', 'err'));
+  }, 600);
+}
 
 async function trackSpike() {
   const el = document.getElementById('spike-value');
@@ -659,31 +565,18 @@ async function refreshStatus() {
     const dot = document.getElementById('status-dot');
     const txt = document.getElementById('status-text');
     const det = document.getElementById('status-detail');
-    const cur = document.getElementById('status-current');
     if (d.state === 'offline') {
       dot.className = 'dot';
       txt.textContent = 'ESP32 hors ligne';
       det.textContent = "Vérifiez le WiFi et l'IP dans docker-compose.yml";
-      cur.textContent = '';
+      renderCurrent(d);
     } else {
       dot.className = 'dot ' + (d.state === 'stopped' ? 'online' : d.state);
-      if (d.calibrating) {
-        txt.textContent = `Calibration en cours (étape ${d.cal_step ?? '?'}/6)`;
-      } else {
-        txt.textContent = { stopped:'En attente', opening:'Ouverture en cours', closing:'Fermeture en cours' }[d.state] || d.state;
-      }
+      txt.textContent = { stopped:'En attente', opening:'Ouverture en cours', closing:'Fermeture en cours' }[d.state] || d.state;
       if (d.ip) esp32Ip = d.ip;
       const fw = d.firmware ? ` · fw ${d.firmware}` : '';
       det.innerHTML = d.ip ? `ESP32 · ${d.ip} · ${rssiHtml(d.rssi, fw)}` : '';
-      cur.textContent = d.current_mA !== undefined
-        ? `Courant : ${d.current_mA.toFixed(0)} mA · ${d.voltage_V.toFixed(1)} V`
-        : '';
-      if (d.position !== undefined) {
-        setPositionUI(d.position);
-        if (d.state === 'stopped') document.getElementById('pos-slider').value = d.position;
-        document.getElementById('pos-target').textContent = document.getElementById('pos-slider').value;
-      }
-      if (d.speed_level !== undefined) setSpeedLevelUI(d.speed_level);
+      renderCurrent(d);
     }
   } catch {
     document.getElementById('status-dot').className = 'dot';
@@ -705,13 +598,9 @@ async function loadSchedules() {
       metaText = DAYS_LABELS[s.days] || s.days;
     }
     const label = s.label ? ` · ${s.label}` : '';
-    const hasPos = s.position !== null && s.position !== undefined;
-    const actBadge = hasPos
-      ? `<span class="badge open">${s.position}%</span>`
-      : `<span class="badge ${s.action}">${s.action === 'open' ? 'Ouvrir' : 'Fermer'}</span>`;
     return `<div class="sched-item ${s.enabled ? '' : 'disabled'}" data-id="${s.id}">
       <div class="sched-info">
-        <div class="sched-time">${time} ${actBadge}</div>
+        <div class="sched-time">${time} <span class="badge ${s.action}">${s.action === 'open' ? 'Ouvrir' : 'Fermer'}</span></div>
         <div class="sched-meta">${metaText}${label}</div>
       </div>
       <div class="sched-actions">
@@ -725,15 +614,12 @@ async function loadSchedules() {
 async function addSchedule() {
   const [h, m] = document.getElementById('s-time').value.split(':');
   const once = document.getElementById('s-type').value === 'once';
-  const posRaw = document.getElementById('s-position').value;
-  const pos = posRaw === '' ? null : Math.max(0, Math.min(100, parseInt(posRaw)));
   const body = {
     action: document.getElementById('s-action').value,
     hour: parseInt(h),
     minute: parseInt(m),
     days: once ? '*' : document.getElementById('s-days').value,
     one_time_date: once ? document.getElementById('s-date').value : null,
-    position: pos,
     label: document.getElementById('s-label').value,
     enabled: true
   };
@@ -741,7 +627,6 @@ async function addSchedule() {
     await api('/api/schedules', 'POST', body);
     toast('Programme ajouté');
     document.getElementById('s-label').value = '';
-    document.getElementById('s-position').value = '';
     loadSchedules();
   } catch(e) { toast('Erreur', 'err'); }
 }
@@ -760,109 +645,36 @@ async function deleteSched(id) {
 async function loadConfig() {
   try {
     const d = await api('/api/esp32/config');
-    if (Array.isArray(d.speed_pct)) {
-      document.getElementById('c-spd-lo').value = d.speed_pct[0];
-      document.getElementById('c-spd-me').value = d.speed_pct[1];
-      document.getElementById('c-spd-hi').value = d.speed_pct[2];
-    }
-    if (Array.isArray(d.travel_open)) {
-      document.getElementById('c-to-lo').value = d.travel_open[0];
-      document.getElementById('c-to-me').value = d.travel_open[1];
-      document.getElementById('c-to-hi').value = d.travel_open[2];
-    }
-    if (Array.isArray(d.travel_close)) {
-      document.getElementById('c-tc-lo').value = d.travel_close[0];
-      document.getElementById('c-tc-me').value = d.travel_close[1];
-      document.getElementById('c-tc-hi').value = d.travel_close[2];
-    }
-    document.getElementById('c-soft-start').checked     = d.soft_start        ?? false;
+    if (d.travel_time_ms !== undefined) document.getElementById('c-travel').value = d.travel_time_ms / 1000;
+    document.getElementById('c-stop-time').checked      = d.stop_on_time      ?? true;
     document.getElementById('c-stop-cur-open').checked  = d.stop_on_cur_open  ?? false;
     document.getElementById('c-stop-cur-close').checked = d.stop_on_cur_close ?? false;
+    document.getElementById('c-soft-start').checked     = d.soft_start        ?? false;
     if (d.threshold_open  !== undefined) document.getElementById('c-thr-open').value  = d.threshold_open;
     if (d.threshold_close !== undefined) document.getElementById('c-thr-close').value = d.threshold_close;
-    if (d.cal_threshold   !== undefined) document.getElementById('c-cal-thr').value   = d.cal_threshold;
-    if (d.speed_level !== undefined) setSpeedLevelUI(d.speed_level);
+    if (d.motor_speed !== undefined) setSpeedDisplay(d.motor_speed);
     document.getElementById('config-current').textContent = `WiFi : ${d.ssid1 || '—'}`;
   } catch { }
 }
 
 async function saveConfig() {
   const body = {};
-  const lo = parseInt(document.getElementById('c-spd-lo').value);
-  const me = parseInt(document.getElementById('c-spd-me').value);
-  const hi = parseInt(document.getElementById('c-spd-hi').value);
-  if (lo > 0 && me > 0 && hi > 0) body.speed_pct = [lo, me, hi];
+  const travelSec = parseFloat(document.getElementById('c-travel').value);
+  const travel    = Math.round(travelSec * 1000);
   const thrOpen  = parseInt(document.getElementById('c-thr-open').value);
   const thrClose = parseInt(document.getElementById('c-thr-close').value);
-  const calThr   = parseInt(document.getElementById('c-cal-thr').value);
-  body.soft_start        = document.getElementById('c-soft-start').checked;
+  body.stop_on_time      = document.getElementById('c-stop-time').checked;
   body.stop_on_cur_open  = document.getElementById('c-stop-cur-open').checked;
   body.stop_on_cur_close = document.getElementById('c-stop-cur-close').checked;
+  body.soft_start        = document.getElementById('c-soft-start').checked;
+  if (travel > 0)          body.travel_time_ms  = travel;
   if (thrOpen  > 0)        body.threshold_open  = thrOpen;
   if (thrClose > 0)        body.threshold_close = thrClose;
-  if (calThr   > 0)        body.cal_threshold   = calThr;
   try {
     await api('/api/esp32/config', 'POST', body);
     toast('Configuration envoyée à l\'ESP32');
     loadConfig();
   } catch(e) { toast('Erreur : ESP32 inaccessible', 'err'); }
-}
-
-async function saveTravelTimes() {
-  const ids = ['c-to-lo','c-to-me','c-to-hi','c-tc-lo','c-tc-me','c-tc-hi'];
-  const v = ids.map(i => parseInt(document.getElementById(i).value));
-  if (v.some(x => !(x > 0))) { toast('Temps invalides', 'err'); return; }
-  try {
-    await api('/api/esp32/config', 'POST', {
-      travel_open:  [v[0], v[1], v[2]],
-      travel_close: [v[3], v[4], v[5]]
-    });
-    toast('Temps de course enregistrés');
-  } catch { toast('Erreur : ESP32 inaccessible', 'err'); }
-}
-
-let calPoll = null;
-async function startCalibration() {
-  const btn = document.getElementById('cal-btn');
-  const st = document.getElementById('cal-status');
-  btn.disabled = true;
-  st.textContent = 'Démarrage de la calibration...';
-  try {
-    await api('/api/calibrate', 'POST');
-    st.textContent = 'Calibration en cours — ne pas couper l\'alimentation.';
-    clearInterval(calPoll);
-    calPoll = setInterval(pollCalibration, 1500);
-  } catch(e) {
-    st.textContent = 'Erreur : ' + e.message;
-    btn.disabled = false;
-  }
-}
-
-async function pollCalibration() {
-  try {
-    const d = await api('/api/status');
-    const st = document.getElementById('cal-status');
-    if (d.calibrating) {
-      st.textContent = `Calibration en cours — étape ${d.cal_step ?? '?'}/6`;
-    } else {
-      clearInterval(calPoll);
-      document.getElementById('cal-btn').disabled = false;
-      st.textContent = 'Calibration terminée.';
-      loadConfig();
-      showCalResults();
-    }
-  } catch {}
-}
-
-async function showCalResults() {
-  try {
-    const d = await api('/api/esp32/config');
-    if (!Array.isArray(d.travel_open)) return;
-    const lbl = ['Lente','Moyenne','Rapide'];
-    document.getElementById('cal-results').innerHTML = lbl.map((l,i) =>
-      `${l} : ↑ ${(d.travel_open[i]/1000).toFixed(1)}s · ↓ ${(d.travel_close[i]/1000).toFixed(1)}s`
-    ).join('<br>');
-  } catch {}
 }
 
 async function rebootEsp32() {
@@ -934,8 +746,8 @@ refreshStatus();
 loadSchedules();
 loadConfig();
 loadRetryConfig();
-showCalResults();
 setInterval(refreshStatus, 10000);
+setInterval(pollCurrent, CURRENT_POLL_MS);
 </script>
 </body>
 </html>
