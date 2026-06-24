@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.4.2"
+#define FIRMWARE_VERSION "1.4.3"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -28,7 +28,14 @@ bool ina219_ok = false;
 
 int  motorSpeed         = 100;        // % PWM (slider 0-100)
 float spikeCurrent_mA   = 0.0;        // max sur les 800 premières ms (pic démarrage)
-float maxCurrent_mA     = 0.0;        // max sur toute la course (aide réglage seuils)
+
+// Imax « régime établi » : max sur la course en excluant la 1ère et la dernière
+// seconde (inrush démarrage + pic de butée), via des tranches de 1 s à fold différé.
+float maxCurrent_mA     = 0.0;        // résultat confirmé (aide réglage seuils)
+float curBucketMax      = 0.0;        // max de la tranche en cours
+unsigned long bucketStart = 0;
+bool firstBucket          = true;
+#define IMAX_BUCKET_MS 1000
 
 int  travelTimeMs       = TRAVEL_TIME_DEFAULT;
 bool stopOnTime         = true;
@@ -91,6 +98,9 @@ static void applyPwm() {
 static void motorStart(MotorState dir) {
   spikeCurrent_mA = 0.0;
   maxCurrent_mA   = 0.0;
+  curBucketMax    = 0.0;
+  bucketStart     = millis();
+  firstBucket     = true;
   motorState     = dir;
   motorStartedAt = millis();
   stopAt = stopOnTime ? millis() + travelTimeMs : 0;
@@ -318,8 +328,16 @@ void loop() {
   // Lecture unique du courant par tour, réutilisée pour le suivi et la coupure
   float cur = ina219_ok ? ina219.getCurrent_mA() : 0.0;
   if (ina219_ok) {
-    if (cur > maxCurrent_mA) maxCurrent_mA = cur;                                  // max sur toute la course
     if (millis() - motorStartedAt < 800 && cur > spikeCurrent_mA) spikeCurrent_mA = cur; // pic démarrage
+
+    // Imax régime : accumule par tranche de 1 s, fold différé (jette 1ère tranche + tranche en cours)
+    if (cur > curBucketMax) curBucketMax = cur;
+    if (millis() - bucketStart >= IMAX_BUCKET_MS) {
+      if (!firstBucket && curBucketMax > maxCurrent_mA) maxCurrent_mA = curBucketMax;
+      firstBucket  = false;
+      curBucketMax = 0.0;
+      bucketStart  = millis();
+    }
   }
 
   if (stopAt != 0 && millis() >= stopAt) {
