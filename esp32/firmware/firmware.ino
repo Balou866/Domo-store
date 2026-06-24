@@ -127,25 +127,27 @@ void motorStop() {
   Serial.printf("motorStop — pos=%.0f%%\n", positionPct);
 }
 
+// Configure et démarre un mouvement (champs de suivi + PWM)
+static void startMove(MotorState dir, int target, int speed, int full, unsigned long durMs) {
+  moveStartPos    = positionPct;
+  moveTargetPct   = target;
+  moveFullTravel  = max(full, 1);
+  activeSpeedPct  = speed;
+  spikeCurrent_mA = 0.0;
+  motorState      = dir;
+  motorStartedAt  = millis();
+  stopAt          = millis() + durMs;
+  applyPwm();
+}
+
 // Lance un mouvement vers une position cible (0..100) à une vitesse donnée (%)
 static void motorMoveTo(int targetPct, int speed, int fullTravelMs) {
   targetPct = constrain(targetPct, 0, 100);
   if (fabs(targetPct - positionPct) < 0.5) { return; }
-
   MotorState dir = (targetPct > positionPct) ? OPENING : CLOSING;
-  moveStartPos   = positionPct;
-  moveTargetPct  = targetPct;
-  moveFullTravel = max(fullTravelMs, 1);
-  activeSpeedPct = speed;
-  spikeCurrent_mA = 0.0;
-  motorState     = dir;
-  motorStartedAt = millis();
-
-  float frac = fabs(targetPct - positionPct) / 100.0;
-  stopAt = millis() + (unsigned long)(frac * moveFullTravel);
-  applyPwm();
-  Serial.printf("Move %s vers %d%% (vit=%d%%, full=%dms)\n",
-                dir == OPENING ? "OUVERTURE" : "FERMETURE", targetPct, speed, moveFullTravel);
+  unsigned long dur = (unsigned long)(fabs(targetPct - positionPct) / 100.0 * max(fullTravelMs, 1));
+  startMove(dir, targetPct, speed, fullTravelMs, dur);
+  Serial.printf("Move %s vers %d%% (vit=%d%%)\n", dir == OPENING ? "OUVERTURE" : "FERMETURE", targetPct, speed);
 }
 
 // Mouvement utilisateur (open/close/position) à la vitesse sélectionnée
@@ -199,6 +201,30 @@ void handlePosition() {
   motorGoTo(p);
   String out = "{\"ok\":true,\"target\":" + String(p) + "}";
   server.send(200, "application/json", out);
+}
+
+// Redéfinit le compteur de position sans bouger le moteur (recalage manuel)
+void handleSetPos() {
+  addCORSHeaders();
+  if (motorState != STOPPED) { server.send(409, "application/json", "{\"ok\":false,\"error\":\"moteur en mouvement\"}"); return; }
+  if (!server.hasArg("p")) { server.send(400, "application/json", "{\"ok\":false,\"error\":\"p manquant\"}"); return; }
+  positionPct = constrain(server.arg("p").toInt(), 0, 100);
+  prefs.putInt("pos", (int)round(positionPct));
+  String out = "{\"ok\":true,\"position\":" + String((int)round(positionPct)) + "}";
+  server.send(200, "application/json", out);
+}
+
+// Mouvement forcé sur la course complète, ignore la position courante (recalage)
+void handleForce() {
+  addCORSHeaders();
+  if (calibrating) { server.send(409, "application/json", "{\"ok\":false,\"error\":\"calibration en cours\"}"); return; }
+  String dir = server.arg("dir");
+  if (dir != "open" && dir != "close") { server.send(400, "application/json", "{\"ok\":false,\"error\":\"dir open|close\"}"); return; }
+
+  MotorState d = (dir == "open") ? OPENING : CLOSING;
+  int full = (d == OPENING) ? travelOpen[speedLevel] : travelClose[speedLevel];
+  startMove(d, (d == OPENING) ? 100 : 0, speedPct[speedLevel], full, full);  // toujours course complète
+  server.send(200, "application/json", "{\"ok\":true,\"force\":true}");
 }
 
 // Lance une étape de calibration (la position n'est pas suivie ici : arrêt par butée)
@@ -407,6 +433,10 @@ void setup() {
   server.on("/api/stop",      HTTP_OPTIONS, handleOptions);
   server.on("/api/position",  HTTP_GET,     handlePosition);
   server.on("/api/position",  HTTP_OPTIONS, handleOptions);
+  server.on("/api/setpos",    HTTP_GET,     handleSetPos);
+  server.on("/api/setpos",    HTTP_OPTIONS, handleOptions);
+  server.on("/api/force",     HTTP_GET,     handleForce);
+  server.on("/api/force",     HTTP_OPTIONS, handleOptions);
   server.on("/api/calibrate", HTTP_POST,    handleCalibrate);
   server.on("/api/calibrate", HTTP_OPTIONS, handleOptions);
   server.on("/api/reboot",    HTTP_POST,    handleReboot);

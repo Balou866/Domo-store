@@ -382,6 +382,23 @@
   <div id="cal-results" style="margin-top:8px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums"></div>
 </div>
 
+<!-- Recalage position -->
+<div class="card">
+  <div class="card-title">Recalage position</div>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+    Si le store est décalé (bloqué à 0% ou 100% alors qu'il ne l'est pas) :
+    forcer une course complète jusqu'à la butée, ou redéfinir manuellement la position.
+  </p>
+  <div class="speed-levels">
+    <button class="lvl-btn" onclick="forceMove('open')">▲ Forcer montée</button>
+    <button class="lvl-btn" onclick="forceMove('close')">▼ Forcer descente</button>
+  </div>
+  <div class="speed-levels" style="margin-top:8px">
+    <button class="lvl-btn" onclick="setPos(0)">Définir 0% (fermé)</button>
+    <button class="lvl-btn" onclick="setPos(100)">Définir 100% (ouvert)</button>
+  </div>
+</div>
+
 <!-- Configuration ESP32 -->
 <div class="card">
   <div class="card-title">Configuration ESP32</div>
@@ -576,6 +593,23 @@ async function goToPosition() {
     setTimeout(refreshStatus, 800);
     trackSpike();
   } catch { toast('Erreur : ESP32 inaccessible', 'err'); }
+}
+
+async function forceMove(dir) {
+  try {
+    await api('/api/force/' + dir);
+    toast('Course forcée : ' + (dir === 'open' ? 'montée' : 'descente'));
+    setTimeout(refreshStatus, 800);
+    trackSpike();
+  } catch { toast('Erreur : ESP32 inaccessible', 'err'); }
+}
+
+async function setPos(pct) {
+  try {
+    await api('/api/setpos/' + pct);
+    toast('Position redéfinie à ' + pct + '%');
+    refreshStatus();
+  } catch(e) { toast('Erreur (moteur en mouvement ?)', 'err'); }
 }
 
 function rssiHtml(rssi, fw) {

@@ -156,6 +156,32 @@ async def position(pct: int):
         raise HTTPException(503, f"ESP32 inaccessible : {e}")
 
 
+@app.get("/api/setpos/{pct}")
+async def setpos(pct: int):
+    if not 0 <= pct <= 100:
+        raise HTTPException(400, "Position 0-100")
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{ESP32_URL}/api/setpos?p={pct}")
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        raise HTTPException(503, f"ESP32 inaccessible : {e}")
+
+
+@app.get("/api/force/{direction}")
+async def force(direction: str):
+    if direction not in ("open", "close"):
+        raise HTTPException(400, "Direction open|close")
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{ESP32_URL}/api/force?dir={direction}")
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        raise HTTPException(503, f"ESP32 inaccessible : {e}")
+
+
 @app.post("/api/calibrate")
 async def calibrate():
     try:
