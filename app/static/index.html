@@ -272,7 +272,8 @@
   .cmd-row { display: flex; gap: 10px; align-items: stretch; margin-top: 12px; }
   .cmd-row .btn-row { flex: 1; margin-top: 0; }
 
-  #spike-panel {
+  .meter-col { display: flex; flex-direction: column; gap: 8px; }
+  #spike-panel, #imax-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -284,15 +285,17 @@
     min-width: 76px;
     text-align: center;
     gap: 3px;
+    flex: 1;
   }
-  #spike-value {
+  #spike-value, #imax-value {
     font-size: 17px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: var(--amber);
     line-height: 1.2;
   }
-  #spike-label { font-size: 10px; color: var(--muted); }
+  #imax-value { color: var(--red); }
+  #spike-label, #imax-label { font-size: 10px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -331,9 +334,15 @@
         <span class="btn-icon">&#8595;</span>Fermer
       </button>
     </div>
-    <div id="spike-panel">
-      <div id="spike-value">—</div>
-      <div id="spike-label">Pic démarrage</div>
+    <div class="meter-col">
+      <div id="spike-panel">
+        <div id="spike-value">—</div>
+        <div id="spike-label">Pic démarrage</div>
+      </div>
+      <div id="imax-panel">
+        <div id="imax-value">—</div>
+        <div id="imax-label">Imax course</div>
+      </div>
     </div>
   </div>
 </div>
@@ -493,13 +502,20 @@ function renderCurrent(d) {
       : '';
 }
 
+function renderImax(d) {
+  const el = document.getElementById('imax-value');
+  el.textContent = (d.max_current_mA !== undefined && d.max_current_mA > 0)
+    ? Math.round(d.max_current_mA) + ' mA'
+    : '—';
+}
+
 let curPolling = false;
 async function pollCurrent() {
   if (curPolling) return;            // évite l'empilement si l'ESP32 répond lentement
   curPolling = true;
   try {
     const d = await api('/api/status');
-    if (d.state !== 'offline') renderCurrent(d);
+    if (d.state !== 'offline') { renderCurrent(d); renderImax(d); }
   } catch {} finally {
     curPolling = false;
   }
@@ -577,6 +593,7 @@ async function refreshStatus() {
       const fw = d.firmware ? ` · fw ${d.firmware}` : '';
       det.innerHTML = d.ip ? `ESP32 · ${d.ip} · ${rssiHtml(d.rssi, fw)}` : '';
       renderCurrent(d);
+      renderImax(d);
     }
   } catch {
     document.getElementById('status-dot').className = 'dot';

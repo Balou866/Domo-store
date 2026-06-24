@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.4.1"
+#define FIRMWARE_VERSION "1.4.2"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -27,7 +27,8 @@ Preferences prefs;
 bool ina219_ok = false;
 
 int  motorSpeed         = 100;        // % PWM (slider 0-100)
-float spikeCurrent_mA   = 0.0;
+float spikeCurrent_mA   = 0.0;        // max sur les 800 premières ms (pic démarrage)
+float maxCurrent_mA     = 0.0;        // max sur toute la course (aide réglage seuils)
 
 int  travelTimeMs       = TRAVEL_TIME_DEFAULT;
 bool stopOnTime         = true;
@@ -89,6 +90,7 @@ static void applyPwm() {
 
 static void motorStart(MotorState dir) {
   spikeCurrent_mA = 0.0;
+  maxCurrent_mA   = 0.0;
   motorState     = dir;
   motorStartedAt = millis();
   stopAt = stopOnTime ? millis() + travelTimeMs : 0;
@@ -139,7 +141,7 @@ void handleReboot() {
 
 void handleStatus() {
   addCORSHeaders();
-  StaticJsonDocument<320> doc;
+  StaticJsonDocument<384> doc;
   const char* states[] = {"stopped", "opening", "closing"};
   doc["firmware"]       = FIRMWARE_VERSION;
   doc["state"]          = states[motorState];
@@ -151,6 +153,7 @@ void handleStatus() {
     doc["current_mA"]       = ina219.getCurrent_mA();
     doc["voltage_V"]        = ina219.getBusVoltage_V();
     doc["spike_current_mA"] = spikeCurrent_mA;
+    doc["max_current_mA"]   = maxCurrent_mA;
   }
   String out;
   serializeJson(doc, out);
@@ -283,9 +286,8 @@ void setup() {
 }
 
 // Arrêt par seuil de courant (butée / obstacle)
-void checkCurrentStop() {
+void checkCurrentStop(float cur) {
   if (millis() - motorStartedAt < CURRENT_CHECK_DELAY_MS) return;
-  float cur = ina219.getCurrent_mA();
   if (motorState == OPENING && stopOnCurrentOpen && cur > thresholdOpen) {
     motorStop();
     Serial.printf("Arrêt courant ouverture: %.0f mA\n", cur);
@@ -313,16 +315,17 @@ void loop() {
   // Soft-start : réapplique le PWM tant que la rampe monte
   if (softStart && millis() - motorStartedAt < SOFT_START_MS) applyPwm();
 
-  // Suivi du pic de courant au démarrage
-  if (ina219_ok && millis() - motorStartedAt < 800) {
-    float cur = ina219.getCurrent_mA();
-    if (cur > spikeCurrent_mA) spikeCurrent_mA = cur;
+  // Lecture unique du courant par tour, réutilisée pour le suivi et la coupure
+  float cur = ina219_ok ? ina219.getCurrent_mA() : 0.0;
+  if (ina219_ok) {
+    if (cur > maxCurrent_mA) maxCurrent_mA = cur;                                  // max sur toute la course
+    if (millis() - motorStartedAt < 800 && cur > spikeCurrent_mA) spikeCurrent_mA = cur; // pic démarrage
   }
 
   if (stopAt != 0 && millis() >= stopAt) {
     motorStop();
     Serial.println("Arrêt timer");
   } else if (ina219_ok) {
-    checkCurrentStop();
+    checkCurrentStop(cur);
   }
 }
