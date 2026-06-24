@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // ======= CONFIGURATION =======
-#define FIRMWARE_VERSION "1.4.3"
+#define FIRMWARE_VERSION "1.4.5"
 
 const char* WIFI_SSID     = "";
 const char* WIFI_PASSWORD = "";
@@ -29,13 +29,15 @@ bool ina219_ok = false;
 int  motorSpeed         = 100;        // % PWM (slider 0-100)
 float spikeCurrent_mA   = 0.0;        // max sur les 800 premières ms (pic démarrage)
 
-// Imax « régime établi » : max sur la course en excluant la 1ère et la dernière
-// seconde (inrush démarrage + pic de butée), via des tranches de 1 s à fold différé.
+// Imax « régime établi » : max des MOYENNES par tranche, en excluant les 2 premières
+// et 2 dernières secondes (inrush + pic butée). La moyenne par tranche annule le
+// ripple PWM 20 kHz / bruit INA219 — sinon on attrape des pics non représentatifs.
 float maxCurrent_mA     = 0.0;        // résultat confirmé (aide réglage seuils)
-float curBucketMax      = 0.0;        // max de la tranche en cours
+float bucketSum         = 0.0;        // somme des échantillons de la tranche en cours
+int   bucketCount       = 0;          // nb d'échantillons de la tranche
 unsigned long bucketStart = 0;
 bool firstBucket          = true;
-#define IMAX_BUCKET_MS 1000
+#define IMAX_BUCKET_MS 2000           // tranche = marge exclue de chaque côté
 
 int  travelTimeMs       = TRAVEL_TIME_DEFAULT;
 bool stopOnTime         = true;
@@ -98,7 +100,8 @@ static void applyPwm() {
 static void motorStart(MotorState dir) {
   spikeCurrent_mA = 0.0;
   maxCurrent_mA   = 0.0;
-  curBucketMax    = 0.0;
+  bucketSum       = 0.0;
+  bucketCount     = 0;
   bucketStart     = millis();
   firstBucket     = true;
   motorState     = dir;
@@ -330,13 +333,16 @@ void loop() {
   if (ina219_ok) {
     if (millis() - motorStartedAt < 800 && cur > spikeCurrent_mA) spikeCurrent_mA = cur; // pic démarrage
 
-    // Imax régime : accumule par tranche de 1 s, fold différé (jette 1ère tranche + tranche en cours)
-    if (cur > curBucketMax) curBucketMax = cur;
+    // Imax régime : moyenne par tranche (2 s), fold différé (jette 1ère tranche + tranche en cours)
+    bucketSum += cur;
+    bucketCount++;
     if (millis() - bucketStart >= IMAX_BUCKET_MS) {
-      if (!firstBucket && curBucketMax > maxCurrent_mA) maxCurrent_mA = curBucketMax;
-      firstBucket  = false;
-      curBucketMax = 0.0;
-      bucketStart  = millis();
+      float avg = bucketCount ? bucketSum / bucketCount : 0.0;
+      if (!firstBucket && avg > maxCurrent_mA) maxCurrent_mA = avg;
+      firstBucket = false;
+      bucketSum   = 0.0;
+      bucketCount = 0;
+      bucketStart = millis();
     }
   }
 

@@ -476,7 +476,7 @@ function toggleSchedType() {
 let esp32Ip = null;
 
 async function api(path, method = 'GET', body = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const opts = { method, cache: 'no-store', headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);
   if (!r.ok) throw new Error(await r.text());
