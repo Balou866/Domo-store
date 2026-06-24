@@ -196,7 +196,7 @@ http://192.168.1.XXX/api/status
 ```
 Réponse attendue :
 ```json
-{"state":"stopped","ip":"192.168.1.XXX","rssi":-65,"travel_time_ms":15000}
+{"firmware":"1.4.0","state":"stopped","position":0,"ip":"192.168.1.XXX","rssi":-65,"speed_level":2}
 ```
 
 ---
@@ -250,10 +250,14 @@ http://<IP_DU_SERVEUR>:9090
 | Fonction | Description |
 |----------|-------------|
 | Contrôle manuel | Boutons Ouvrir / Stop / Fermer |
+| Position en % | Slider « Aller à N% » — ouverture partielle (0=fermé, 100=ouvert) |
+| 3 vitesses | Lente / Moyenne / Rapide, sélectionnables à la volée |
+| Calibration auto | Mesure les temps de course par vitesse via les butées (pic courant INA219) |
+| Démarrage progressif | Soft-start optionnel (rampe PWM) pour réduire le pic de courant |
 | Programmation récurrente | Tous les jours, semaine, week-end, jour précis |
-| Programmation one-shot | "Une seule fois" à une date donnée |
-| Configuration à chaud | Travel time + WiFi secondaire via l'UI (sans reflasher) |
-| WiFi secondaire | Fallback automatique si le WiFi principal est absent |
+| Programmation one-shot | « Une seule fois » à une date donnée (auto-supprimée après exécution) |
+| Programmation par position | Un programme peut viser une position cible (% au lieu de plein ouvert/fermé) |
+| Configuration à chaud | Vitesses, seuils courant, temps de course via l'UI (sans reflasher) |
 | Courant / tension | Affiché en temps réel si INA219 câblé |
 | Persistance | Programmes et config sauvegardés (Docker volume + NVS ESP32) |
 
@@ -280,19 +284,23 @@ Deux méthodes disponibles après le premier flash USB :
 
 | Méthode | Endpoint | Description |
 |---------|----------|-------------|
-| GET | `/api/status` | État moteur, IP, RSSI, courant INA219 |
-| GET | `/api/open` | Ouvrir le store |
-| GET | `/api/close` | Fermer le store |
+| GET | `/api/status` | État moteur, position %, IP, RSSI, vitesse, courant INA219 |
+| GET | `/api/open` | Ouvrir (position 100%) |
+| GET | `/api/close` | Fermer (position 0%) |
 | GET | `/api/stop` | Arrêt immédiat |
+| GET | `/api/position?p=NN` | Aller à la position NN% (0–100) |
 | GET | `/api/config` | Lire la configuration actuelle |
-| POST | `/api/config` | Modifier travel_time_ms, ssid2, password2 |
+| POST | `/api/config` | Modifier vitesses, temps de course, seuils courant, soft-start, etc. |
+| POST | `/api/calibrate` | Lancer la calibration auto (nécessite INA219) |
+| POST | `/api/reboot` | Redémarrer l'ESP32 |
 | POST | `/api/ota` | Flash firmware OTA (multipart, champ `firmware`) |
 
-Exemple modification travel time :
+Exemple — sélectionner la vitesse moyenne et viser 50% :
 ```bash
 curl -X POST http://192.168.1.XXX/api/config \
   -H "Content-Type: application/json" \
-  -d '{"travel_time_ms": 20000}'
+  -d '{"speed_level": 1}'
+curl "http://192.168.1.XXX/api/position?p=50"
 ```
 
 ---
@@ -304,7 +312,8 @@ curl -X POST http://192.168.1.XXX/api/config \
 | « ESP32 hors ligne » dans l'UI | IP incorrecte | Vérifier `ESP32_URL` dans docker-compose |
 | Moteur tourne dans le mauvais sens | M+/M− inversés | Échanger les deux fils moteur |
 | Moteur ne démarre pas | R_EN/L_EN non câblés au 5V | Vérifier fils R_EN et L_EN → rail 5V IBT-2 |
-| Volet ne s'arrête pas | `travel_time_ms` trop grand | Modifier via l'UI → Configuration |
+| Volet ne s'arrête pas / position imprécise | Temps de course faux | Lancer la calibration auto (carte Calibration) |
+| Calibration en timeout | Vitesse lente trop basse (stiction) | Augmenter « Vitesse lente » dans Configuration |
 | Upload Arduino échoue | Mauvais port ou timing | Maintenir BOOT pendant l'upload |
 | Aucun port COM visible | Driver USB absent | Installer CP2102 ou CH340 selon la puce |
 | WiFi ne connecte pas | SSID/password incorrect | Vérifier dans le firmware, reflasher |
@@ -331,6 +340,8 @@ curl -X POST http://192.168.1.XXX/api/config \
 ┌──────────▼──────────────────┐
 │  ESP32 WebServer            │
 │  /api/open|close|stop       │
+│  /api/position?p=NN         │
+│  /api/calibrate /api/reboot │
 │  /api/status                │
 │  /api/config (GET/POST)     │
 └──────────┬──────────────────┘

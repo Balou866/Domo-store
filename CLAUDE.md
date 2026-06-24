@@ -34,11 +34,15 @@ Navigateur → FastAPI (port 9090) → ESP32 WebServer (port 80) → BTS7960 (IB
 **`app/static/index.html`** — UI vanilla HTML/JS/CSS, single-file, sans framework.
 
 **`esp32/firmware/firmware.ino`** — Arduino/C++ :
-- WiFi avec fallback sur un réseau secondaire (SSID2/pass2 en NVS via `Preferences`).
-- Config persistante en NVS (`travel_time_ms`, `ssid2`, `pass2`, `stop_on_cur_open`, `stop_on_cur_close`, `threshold_open`, `threshold_close`) — modifiable à chaud via `POST /api/config` sans reflasher.
+- WiFi : SSID/password principaux codés en dur (`WIFI_SSID`/`WIFI_PASSWORD`) — accès par IP sur le réseau local, donc forcément fixés au flash. Reconnexion auto si perte (`loop()`).
+- Config persistante en NVS (`speed_pct[3]`, `speed_level`, `travel_open[3]`, `travel_close[3]`, `position`, `soft_start`, `cal_threshold`, `stop_on_cur_open`, `stop_on_cur_close`, `threshold_open`, `threshold_close`) — modifiable à chaud via `POST /api/config` sans reflasher.
 - Moteur géré par timer (`stopAt`) dans `loop()`, pas de thread.
-- INA219 optionnel : si absent au démarrage, `ina219_ok = false` et mesures ignorées.
-- Arrêt par seuil de courant (INA219) : si `stop_on_cur_open/close` activé, le moteur s'arrête quand le courant dépasse `threshold_open/close` (mA) — alternative à l'arrêt purement temporel. Firmware **v1.3.0**.
+- **Position en % (0=fermé, 100=ouvert)** : suivie par le temps écoulé pendant le mouvement, persistée en NVS. `GET /api/position?p=NN` vise une position cible. `open`/`close` = `goto 100`/`0`.
+- **3 vitesses** (lente/moyenne/rapide = `speed_pct[0..2]`), `speed_level` = niveau actif. Les temps de course (`travel_open/close`) sont stockés par vitesse car le RPM change le temps de parcours.
+- **Calibration auto** (`POST /api/calibrate`, nécessite INA219) : homing + 3×(montée+fermeture) jusqu'aux butées (pic courant > `cal_threshold`), mesure et sauve les 6 temps. Timeout sécurité 120 s/étape.
+- **Soft-start** optionnel (`soft_start`) : rampe PWM sur 500 ms au démarrage pour réduire le pic de courant.
+- INA219 optionnel : si absent au démarrage, `ina219_ok = false` et mesures ignorées (calibration indisponible).
+- Arrêt par seuil de courant (INA219) : si `stop_on_cur_open/close` activé, arrêt quand le courant dépasse `threshold_open/close` (mA) — détection butée/obstacle, recale la position aux extrêmes. `POST /api/reboot` redémarre l'ESP32. Firmware **v1.4.0**.
 - Driver moteur : **BTS7960 (IBT-2)**. Pins : RPWM=GPIO14 (ouverture), LPWM=GPIO27 (fermeture). R_EN/L_EN câblés au 5V (toujours actifs). Remplace TB6612FNG grillé.
 
 ## Points clés
