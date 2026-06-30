@@ -76,7 +76,7 @@ Vérifier **chaque pin** de chaque composant avant de mettre sous tension.
 
 | Pin ESP32 | Rôle | Branché sur |
 |-----------|------|-------------|
-| 3V3 | Alimentation logique | Rail 3.3V HW131, INA219 VCC |
+| 3V3 | Alimentation logique (**entrée**) | Rail 3.3V HW131 *(l'INA219 VCC est sur le même rail, pas câblé directement au pin)* |
 | GND | Masse | Rail GND commun |
 | D14 (GPIO14) | PWM ouverture | IBT-2 RPWM |
 | D21 (GPIO21) | I2C SDA | INA219 SDA |
